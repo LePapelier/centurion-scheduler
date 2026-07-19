@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "demonic-scheduler",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5199", "--strictPort"],
+      "cwd": "/Users/Paul/Documents/Pro/demonic-scheduler",
+      "port": 5199
+    }
+  ]
+}

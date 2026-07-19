@@ -23,13 +23,13 @@ import type { Assignment, CompiledLevel, Expr, Value } from './ast'
 
 // ——— Tokenizer ———
 
-type TokKind =
+export type TokKind =
   | 'ident' | 'num' | 'str'
   | 'lparen' | 'rparen' | 'lbrace' | 'rbrace' | 'comma'
   | 'and' | 'or' | 'not' | 'arrow' | 'defeq' | 'assign' | 'in'
   | 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge' | 'plus' | 'minus'
 
-interface Tok {
+export interface Tok {
   readonly kind: TokKind
   readonly text: string
   readonly pos: number // offset dans la ligne source
@@ -47,7 +47,7 @@ const SYMBOLS: readonly (readonly [string, TokKind])[] = [
   ['{', 'lbrace'], ['}', 'rbrace'], [',', 'comma'],
 ]
 
-function tokenize(src: string, line: number): Tok[] {
+export function tokenize(src: string, line: number): Tok[] {
   const toks: Tok[] = []
   let i = 0
   outer: while (i < src.length) {
@@ -207,6 +207,25 @@ class P {
   }
 }
 
+// ——— Formules tapées par le joueur ———
+
+/** Parse une formule isolée (saisie joueur). Lève avec un message localisé. */
+export function parseExpr(src: string): Expr {
+  const p = new P(tokenize(src, 1), 1)
+  const e = p.expr()
+  if (!p.atEnd()) throw new Error(`« ${p.peek()!.text} » inattendu`)
+  return e
+}
+
+/** Nombre de tokens d'une formule (score golf). 0 si non tokenisable. */
+export function countTokens(src: string): number {
+  try {
+    return tokenize(src, 1).length
+  } catch {
+    return 0
+  }
+}
+
 // ——— Évaluation ———
 
 export function evalExpr(e: Expr, s: State): Value {
@@ -263,6 +282,12 @@ export function compileLevel(src: string): CompiledLevel {
   let invariantSrc = ''
   let colorExpr: Expr | null = null
   let labelVars: string[] = []
+  let mode: 'trace' | 'match' | 'repair' = 'trace'
+  let target: Expr | undefined
+  const requires: { src: string; expr: Expr }[] = []
+  const repairables: string[] = []
+  const tutorial: string[] = []
+  let goal = ''
   let inVariables = false
 
   const lines = src.split('\n')
@@ -273,8 +298,9 @@ export function compileLevel(src: string): CompiledLevel {
 
     const kw = line.split(/\s+/, 1)[0]
     const rest = line.slice(kw.length).trim()
-    if (['LEVEL', 'NAME', 'DESC', 'VARIABLES', 'ACTION', 'INVARIANT', 'COLOR', 'LABEL'].includes(kw))
-      inVariables = kw === 'VARIABLES'
+    const KEYWORDS = ['LEVEL', 'NAME', 'DESC', 'VARIABLES', 'ACTION', 'INVARIANT', 'COLOR', 'LABEL',
+      'MODE', 'TARGET', 'REQUIRE', 'REPAIR', 'TUTORIAL', 'GOAL']
+    if (KEYWORDS.includes(kw)) inVariables = kw === 'VARIABLES'
 
     switch (kw) {
       case 'LEVEL': id = rest; break
@@ -314,6 +340,33 @@ export function compileLevel(src: string): CompiledLevel {
       case 'LABEL':
         labelVars = rest.split(',').map((v) => v.trim()).filter(Boolean)
         break
+      case 'MODE':
+        if (rest !== 'trace' && rest !== 'match' && rest !== 'repair')
+          throw new Error(`ligne ${lineNo} : MODE trace|match|repair attendu`)
+        mode = rest
+        break
+      case 'TARGET': {
+        const p = new P(tokenize(rest, lineNo), lineNo)
+        target = p.expr()
+        if (!p.atEnd()) throw new Error(`ligne ${lineNo} : « ${p.peek()!.text} » inattendu`)
+        break
+      }
+      case 'REQUIRE': {
+        const p = new P(tokenize(rest, lineNo), lineNo)
+        const expr = p.expr()
+        if (!p.atEnd()) throw new Error(`ligne ${lineNo} : « ${p.peek()!.text} » inattendu`)
+        requires.push({ src: rest, expr })
+        break
+      }
+      case 'REPAIR':
+        repairables.push(rest)
+        break
+      case 'TUTORIAL':
+        tutorial.push(rest)
+        break
+      case 'GOAL':
+        goal = rest
+        break
       default: {
         if (!inVariables)
           throw new Error(`ligne ${lineNo} : directive inconnue « ${kw} »`)
@@ -341,15 +394,25 @@ export function compileLevel(src: string): CompiledLevel {
   }
 
   if (id === '') throw new Error('directive LEVEL manquante')
-  if (invariant === null) throw new Error('directive INVARIANT manquante')
   if (actions.length === 0) throw new Error('aucune ACTION déclarée')
+  if (mode === 'match' && target === undefined) throw new Error('MODE match : directive TARGET manquante')
+  if (mode !== 'match' && invariant === null) throw new Error('directive INVARIANT manquante')
+  if (mode === 'repair') {
+    if (repairables.length === 0) throw new Error('MODE repair : directive REPAIR manquante')
+    if (requires.length === 0) throw new Error('MODE repair : directive REQUIRE manquante (anti-trivialité)')
+    for (const r of repairables)
+      if (!actions.some((a) => a.name === r))
+        throw new Error(`REPAIR : action inconnue « ${r} »`)
+  }
   for (const a of actions)
     for (const asg of a.assigns)
       if (init[asg.name] === undefined)
         throw new Error(`ligne ${asg.line} : affectation à une variable non déclarée « ${asg.name} »`)
   for (const v of labelVars)
     if (init[v] === undefined) throw new Error(`LABEL : variable non déclarée « ${v} »`)
-  const inv = invariant
+  // Invariant optionnel en mode match (pas de notion de violation).
+  const inv: Expr = invariant ?? { kind: 'num', value: 1 }
+  const invFn = invariant === null ? () => true : (s: State) => bool(evalExpr(inv, s))
 
   const compiledActions = actions.map((a) => ({
     name: a.name,
@@ -378,10 +441,17 @@ export function compileLevel(src: string): CompiledLevel {
     description: desc.join(' '),
     init,
     actions: compiledActions,
-    invariant: (s) => bool(evalExpr(inv, s)),
+    invariant: invFn,
     actionsSrc: actions.map((a) => ({ name: a.name, guardSrc: a.guardSrc, updateSrc: a.updateSrc })),
     invariantSrc,
     labelVars: labelVars.length > 0 ? labelVars : Object.keys(init),
     colorValue: colorExpr ? (s) => num(evalExpr(colorExpr, s), 0) : undefined,
+    mode,
+    target,
+    requires,
+    repairables,
+    tutorial,
+    goal,
+    domains: domains as ReadonlyMap<string, readonly (string | number)[]>,
   }
 }

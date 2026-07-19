@@ -57,6 +57,13 @@ export class SceneCtx {
     this.tweens.push({ t0: performance.now(), tween })
   }
 
+  /** Arrêt propre (changement de niveau). */
+  dispose(): void {
+    this.renderer.setAnimationLoop(null)
+    this.renderer.dispose()
+    this.renderer.domElement.remove()
+  }
+
   private frame(time: number): void {
     const now = performance.now()
     this.tweens = this.tweens.filter(({ t0, tween }) => {

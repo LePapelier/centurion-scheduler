@@ -3,7 +3,7 @@ import { levels } from '../levels'
 import { explore } from './explore'
 import { currentNode, isVictory, newGame, play, undo } from './game'
 
-const mutex = levels[0]
+const mutex = levels.find((l) => l.id === 't2-mutex')!
 
 const graph = explore(mutex)
 

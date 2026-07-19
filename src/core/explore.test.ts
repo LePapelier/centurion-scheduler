@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { levels } from '../levels'
 import { explore } from './explore'
 
-const mutex = levels[0]
+const mutex = levels.find((l) => l.id === 't2-mutex')!
 import { stateKey } from './spec'
 
 describe('explore(mutex)', () => {

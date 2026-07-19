@@ -21,6 +21,8 @@ export interface Assignment {
   readonly line: number
 }
 
+export type LevelMode = 'trace' | 'match' | 'repair'
+
 /** Niveau compilé depuis le DSL : un Level jouable + tout ce qu'il faut afficher. */
 export interface CompiledLevel extends Level {
   readonly actionsSrc: readonly {
@@ -33,4 +35,18 @@ export interface CompiledLevel extends Level {
   readonly labelVars: readonly string[]
   /** Valeur sémantique d'un état (directive COLOR), pour la coloration du graphe. */
   colorValue?(s: State): number
+
+  readonly mode: LevelMode
+  /** MODE match : l'ensemble d'états à caractériser. */
+  readonly target?: Expr
+  /** MODE repair : conditions d'atteignabilité à préserver (anti-trivialité). */
+  readonly requires: readonly { readonly src: string; readonly expr: Expr }[]
+  /** MODE repair : actions dont la garde est renforçable. */
+  readonly repairables: readonly string[]
+  /** Paragraphes du tuto (directive TUTORIAL, répétable). */
+  readonly tutorial: readonly string[]
+  /** Consigne courte (directive GOAL). */
+  readonly goal: string
+  /** Domaines déclarés (autocomplétion des valeurs). */
+  readonly domains: ReadonlyMap<string, readonly (string | number)[]>
 }

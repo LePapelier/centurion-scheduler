@@ -3,19 +3,28 @@ import type { Graph } from '../core/explore'
 import type { SceneCtx } from './scene'
 
 export interface Styles {
-  readonly current: number
-  readonly frontier: ReadonlySet<number> // successeurs cliquables
+  /** Nœud courant (mode trace) — null : pas de halo. */
+  readonly current: number | null
+  readonly frontier: ReadonlySet<number> // successeurs jouables (mode trace)
   readonly traceEdges: ReadonlySet<number>
   readonly enabledEdges: ReadonlySet<number>
-  /** Nœud à faire ressortir (survol d'une action dans la spec), ou -1. */
+  /** Nœud à faire ressortir (aperçu de la saisie), ou -1. */
   readonly highlight: number
+  /** Couleurs imposées par le mode de jeu (match : vert/rouge/blanc). */
+  readonly overrides?: ReadonlyMap<number, THREE.Color>
+  /** Nœuds éteints (repair : devenus inatteignables). */
+  readonly dimmed?: ReadonlySet<number>
+  /** Arêtes tuées par les renforts (repair) — estompées rouge sombre. */
+  readonly killedEdges?: ReadonlySet<number>
 }
 
 const EDGE = {
   base: new THREE.Color(0x252c3d),
   enabled: new THREE.Color(0x8a5a20),
   trace: new THREE.Color(0xd9a441),
+  killed: new THREE.Color(0x4a1a22),
 }
+const BG = new THREE.Color(0x0b0e14)
 const WHITE = new THREE.Color(0xffffff)
 const FRONTIER_TINT = new THREE.Color(0xffb04d)
 
@@ -82,7 +91,7 @@ export class GraphView {
   private readonly halo: THREE.Sprite
   private readonly ctx: SceneCtx
   private styles: Styles = {
-    current: 0,
+    current: null,
     frontier: new Set(),
     traceEdges: new Set(),
     enabledEdges: new Set(),
@@ -156,6 +165,20 @@ export class GraphView {
     return out.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
   }
 
+  /** Tout révéler d'emblée (modes match et repair — pas de brouillard). */
+  revealAll(): void {
+    for (let i = 0; i < this.graph.nodes.length; i++) {
+      if (this.revealed[i]) continue
+      this.revealed[i] = true
+      this.revealScale[i] = 1
+      if (this.labels[i] === null && this.labelTexts[i] !== '') {
+        const sprite = labelSprite(this.labelTexts[i])
+        this.labels[i] = sprite
+        this.ctx.scene.add(sprite)
+      }
+    }
+  }
+
   /** Éclosion d'un nœud : apparaît sur son parent puis glisse vers sa place. */
   reveal(i: number, from: number | null): void {
     if (this.revealed[i]) return
@@ -182,20 +205,26 @@ export class GraphView {
   setStyles(styles: Styles): void {
     this.styles = styles
     for (let i = 0; i < this.graph.nodes.length; i++) {
-      this.tmpColor.copy(this.nodeColors[i])
+      this.tmpColor.copy(styles.overrides?.get(i) ?? this.nodeColors[i])
       if (styles.frontier.has(i)) this.tmpColor.lerp(FRONTIER_TINT, 0.45)
       if (i === styles.highlight) this.tmpColor.lerp(WHITE, 0.45)
+      if (styles.dimmed?.has(i)) this.tmpColor.lerp(BG, 0.75)
       this.nodesMesh.setColorAt(i, this.tmpColor)
+      const label = this.labels[i]
+      if (label !== null)
+        (label.material as THREE.SpriteMaterial).color.setScalar(styles.dimmed?.has(i) ? 0.35 : 1)
     }
     this.nodesMesh.instanceColor!.needsUpdate = true
 
     const edgeColors = this.edgeGeom.getAttribute('color') as THREE.BufferAttribute
     for (let e = 0; e < this.graph.edges.length; e++) {
-      const c = styles.traceEdges.has(e)
-        ? EDGE.trace
-        : styles.enabledEdges.has(e)
-          ? EDGE.enabled
-          : EDGE.base
+      const c = styles.killedEdges?.has(e)
+        ? EDGE.killed
+        : styles.traceEdges.has(e)
+          ? EDGE.trace
+          : styles.enabledEdges.has(e)
+            ? EDGE.enabled
+            : EDGE.base
       for (const v of [0, 1]) edgeColors.setXYZ(e * 2 + v, c.r, c.g, c.b)
     }
     edgeColors.needsUpdate = true
@@ -219,6 +248,7 @@ export class GraphView {
       if (i === this.styles.current) s *= 1.35
       else if (this.styles.frontier.has(i)) s *= 1 + 0.13 * Math.sin(time * 0.005 + i * 1.7)
       if (i === this.styles.highlight) s *= 1.25
+      if (this.styles.dimmed?.has(i)) s *= 0.55
       dummy.position.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
       dummy.scale.setScalar(Math.max(s, 1e-4))
       dummy.updateMatrix()
@@ -245,13 +275,16 @@ export class GraphView {
     this.edgeGeom.getAttribute('position').needsUpdate = true
 
     const cur = this.styles.current
-    this.halo.position.set(
-      this.display[cur * 3],
-      this.display[cur * 3 + 1],
-      this.display[cur * 3 + 2],
-    )
-    const mat = this.halo.material as THREE.SpriteMaterial
-    mat.color.set(this.graph.nodes[cur].violating ? 0xff3b52 : 0x6ec8ff)
-    mat.opacity = 0.55 + 0.25 * Math.sin(time * 0.004)
+    this.halo.visible = cur !== null
+    if (cur !== null) {
+      this.halo.position.set(
+        this.display[cur * 3],
+        this.display[cur * 3 + 1],
+        this.display[cur * 3 + 2],
+      )
+      const mat = this.halo.material as THREE.SpriteMaterial
+      mat.color.set(this.graph.nodes[cur].violating ? 0xff3b52 : 0x6ec8ff)
+      mat.opacity = 0.55 + 0.25 * Math.sin(time * 0.004)
+    }
   }
 }

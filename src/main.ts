@@ -1,23 +1,27 @@
+import type { Completion } from '@codemirror/autocomplete'
 import * as THREE from 'three'
-import { explore } from './core/explore'
-import { currentNode, isVictory, newGame, play, undo, type Game } from './core/game'
+import { explore, type Graph } from './core/explore'
+import { currentNode, newGame, play, undo, type Game } from './core/game'
+import { matchStates, sameSet } from './core/match'
+import { checkRepair } from './core/repair'
+import type { CompiledLevel } from './dsl/ast'
+import { countTokens, parseExpr } from './dsl/parse'
 import { layout } from './layout/force'
 import { levels } from './levels'
 import { GraphView } from './render/graph'
 import { SceneCtx } from './render/scene'
+import { loadProgress, recordScore, unlock } from './ui/campaign'
+import { FormulaEditor, OPERATOR_COMPLETIONS } from './ui/editor'
 import { Hud } from './ui/hud'
 
-const level = levels[0]
-const graph = explore(level)
-const positions = layout(
-  graph.nodes.length,
-  graph.edges.map((e) => [e.from, e.to] as const),
-)
+const app = document.getElementById('app')!
+const progress = loadProgress()
+const levelNames = levels.map((l) => l.name)
 
-// ——— Sémantique visuelle des nœuds, dérivée du DSL. ———
+// ——— Helpers communs ———
 
-/** Couleur : gradient bleu → ambre → rouge sur la valeur COLOR, rouge fixe si violant. */
-function semanticColors(): THREE.Color[] {
+/** Couleur sémantique : gradient bleu → ambre → rouge sur COLOR, rouge si violant. */
+function semanticColors(level: CompiledLevel, graph: Graph): THREE.Color[] {
   const base = new THREE.Color(0x4a78b0)
   const mid = new THREE.Color(0xe0913c)
   const hot = new THREE.Color(0xff3b52)
@@ -31,174 +35,422 @@ function semanticColors(): THREE.Color[] {
   })
 }
 
-const labelTexts = graph.nodes.map((n) =>
-  level.labelVars.map((v) => String(n.state[v])).join('·'),
-)
-
-const app = document.getElementById('app')!
-const ctx = new SceneCtx(app)
-const view = new GraphView(ctx, graph, positions, semanticColors(), labelTexts)
-
-let game: Game = newGame(level.id)
-let prevState: (typeof level)['init'] | null = null
-let locked = false // vrai après victoire, jusqu'au reset
-let hoverNode = -1 // nœud sous la souris (graphe)
-let hoverAction: string | null = null // action survolée (spec)
-
-/** Arêtes sortantes du nœud courant, indexées par nom d'action. */
-function enabledMoves(): Map<string, number> {
-  const current = currentNode(game, graph)
-  const map = new Map<string, number>()
-  if (!graph.nodes[current].violating)
-    for (const e of graph.successors[current]) map.set(graph.edges[e].action, e)
-  return map
-}
-
-function playAction(name: string): void {
-  const e = enabledMoves().get(name)
-  if (e === undefined || locked) return
-  prevState = graph.nodes[currentNode(game, graph)].state
-  game = play(game, graph, e)
-  refresh()
-}
-
-const hud = new Hud(app, level, {
-  onUndo: () => {
-    if (!locked && game.moves.length > 0) {
-      game = undo(game)
-      prevState = null
-      refresh()
+/** Complétions variables + valeurs de domaine + opérateurs. */
+function formulaCompletions(level: CompiledLevel): Completion[] {
+  const out: Completion[] = Object.keys(level.init).map((v) => ({ label: v, type: 'variable' }))
+  const seen = new Set<string>()
+  for (const dom of level.domains.values())
+    for (const v of dom) {
+      const label = JSON.stringify(v)
+      if (!seen.has(label)) {
+        seen.add(label)
+        out.push({ label, type: 'constant' })
+      }
     }
-  },
-  onReset: () => {
-    game = newGame(level.id)
-    prevState = null
-    locked = false
-    hud.hideVictory()
-    refresh()
-  },
-  onAction: playAction,
-  onHoverAction: (name) => {
-    hoverAction = name
-    refresh(false)
-  },
-})
-
-/** Glissement doux de la cible caméra vers le nœud courant. */
-function glideTo(node: number): void {
-  const from = ctx.controls.target.clone()
-  const to = view.nodePosition(node, new THREE.Vector3())
-  ctx.addTween({
-    dur: 500,
-    step: (k) => ctx.controls.target.lerpVectors(from, to, k),
-  })
+  return [...out, ...OPERATOR_COMPLETIONS]
 }
 
-/**
- * Resynchronise tout l'affichage depuis l'état de jeu.
- * `structural` = false pour un simple changement de survol.
- */
-function refresh(structural = true): void {
-  const current = currentNode(game, graph)
-  const moves = enabledMoves()
-
-  view.reveal(current, null)
-  const frontier = new Set<number>()
-  for (const e of moves.values()) {
-    view.reveal(graph.edges[e].to, current)
-    frontier.add(graph.edges[e].to)
-  }
-
-  const highlight = hoverAction !== null ? graph.edges[moves.get(hoverAction)!].to : hoverNode
-  view.setStyles({
-    current,
-    frontier,
-    traceEdges: new Set(game.moves),
-    enabledEdges: new Set(moves.values()),
-    highlight,
-  })
-
-  if (!structural) return
-  glideTo(current)
-
-  hud.update({
-    moves: game.moves.length,
-    par: graph.par,
-    state: graph.nodes[current].state,
-    prevState,
-    enabled: new Set(moves.keys()),
-    trace: game.moves.map((e) => graph.edges[e].action),
-    violated: graph.nodes[current].violating,
-  })
-
-  if (isVictory(game, graph)) {
-    locked = true
-    hud.setHint('')
-    hud.showVictory(
-      game.moves.length,
-      graph.par,
-      game.moves.map((e) => graph.edges[e].action),
-    )
-  } else if (moves.size === 0) {
-    hud.setHint('aucune action activée — annulez un coup')
-  } else {
-    hud.setHint('cliquez une action activée, ou un état orange du graphe')
-  }
+const EMPTY = new Set<number>()
+const noStyles = {
+  current: null,
+  frontier: EMPTY,
+  traceEdges: EMPTY,
+  enabledEdges: EMPTY,
+  highlight: -1,
 }
 
-// ——— Interaction pointeur sur le graphe. ———
+// ——— Chargement d'un niveau ———
 
-const ndc = new THREE.Vector2()
-function toNdc(ev: PointerEvent): THREE.Vector2 {
-  const r = ctx.renderer.domElement.getBoundingClientRect()
-  return ndc.set(
-    ((ev.clientX - r.left) / r.width) * 2 - 1,
-    -((ev.clientY - r.top) / r.height) * 2 + 1,
+let disposeCurrent: (() => void) | null = null
+
+function loadLevel(index: number): void {
+  disposeCurrent?.()
+  app.innerHTML = ''
+  disposeCurrent = startLevel(index)
+}
+
+function startLevel(index: number): () => void {
+  const level = levels[index]
+  const graph = explore(level)
+  const positions = layout(
+    graph.nodes.length,
+    graph.edges.map((e) => [e.from, e.to] as const),
   )
+  const ctx = new SceneCtx(app)
+  const view = new GraphView(
+    ctx,
+    graph,
+    positions,
+    semanticColors(level, graph),
+    graph.nodes.map((n) => level.labelVars.map((v) => String(n.state[v])).join('·')),
+  )
+  const hasNext = index + 1 < levels.length
+
+  const win = (score: number, title: string, body: string): void => {
+    recordScore(progress, level.id, score)
+    unlock(progress, Math.min(index + 1, levels.length - 1))
+    hud.showVictory(title, body, hasNext)
+  }
+
+  const hud = new Hud(app, level, levelNames, index, progress.unlocked, {
+    onUndo: () => modeHooks.onUndo?.(),
+    onReset: () => {
+      hud.hideVictory()
+      modeHooks.onReset()
+    },
+    onSelectLevel: loadLevel,
+    onNext: () => loadLevel(index + 1),
+  })
+
+  const modeHooks =
+    level.mode === 'trace'
+      ? setupTrace(level, graph, ctx, view, hud, win)
+      : level.mode === 'match'
+        ? setupMatch(level, graph, ctx, view, hud, win)
+        : setupRepair(level, graph, ctx, view, hud, win)
+
+  return () => ctx.dispose()
 }
 
-/** Actions menant au nœud `to` depuis le nœud courant. */
-function actionsTo(to: number): string[] {
-  return [...enabledMoves()]
-    .filter(([, e]) => graph.edges[e].to === to)
-    .map(([name]) => name)
+interface ModeHooks {
+  onReset(): void
+  onUndo?(): void
 }
 
-let downAt: [number, number] | null = null
-const canvas = ctx.renderer.domElement
+type Win = (score: number, title: string, body: string) => void
 
-canvas.addEventListener('pointerdown', (ev) => {
-  downAt = [ev.clientX, ev.clientY]
-})
+// ——— MODE trace : l'adversaire au clavier ———
 
-canvas.addEventListener('pointerup', (ev) => {
-  if (!downAt || locked) return
-  const [x, y] = downAt
-  downAt = null
-  if (Math.hypot(ev.clientX - x, ev.clientY - y) > 5) return // c'était un drag caméra
-  const hit = view.pick(toNdc(ev))
-  if (hit === null) return
-  const names = actionsTo(hit)
-  if (names.length > 0) playAction(names[0])
-})
+function setupTrace(
+  level: CompiledLevel,
+  graph: Graph,
+  ctx: SceneCtx,
+  view: GraphView,
+  hud: Hud,
+  win: Win,
+): ModeHooks {
+  let game: Game = newGame(level.id)
+  let prevState: (typeof level)['init'] | null = null
+  let locked = false
 
-canvas.addEventListener('pointermove', (ev) => {
-  if (locked) return
-  const hit = view.pick(toNdc(ev))
-  const names = hit === null ? [] : actionsTo(hit)
-  const newHover = names.length > 0 ? hit! : -1
-  if (names.length > 0) {
-    canvas.style.cursor = 'pointer'
-    hud.showTooltip(ev.clientX, ev.clientY, names.join(' / '))
-  } else {
-    canvas.style.cursor = ''
-    hud.hideTooltip()
+  const enabledMoves = (): Map<string, number> => {
+    const at = currentNode(game, graph)
+    const map = new Map<string, number>()
+    if (!graph.nodes[at].violating)
+      for (const e of graph.successors[at]) map.set(graph.edges[e].action, e)
+    return map
   }
-  hud.setHoverActions(new Set(names))
-  if (newHover !== hoverNode) {
-    hoverNode = newHover
-    refresh(false)
-  }
-})
 
-refresh()
+  /** Nom exact, ou préfixe non ambigu, d'une action activée. */
+  const resolve = (text: string): string | null => {
+    if (text === '') return null
+    const names = [...enabledMoves().keys()]
+    if (names.includes(text)) return text
+    const hits = names.filter((n) => n.startsWith(text))
+    return hits.length === 1 ? hits[0] : null
+  }
+
+  const glideTo = (node: number): void => {
+    const from = ctx.controls.target.clone()
+    const to = view.nodePosition(node, new THREE.Vector3())
+    ctx.addTween({ dur: 500, step: (k) => ctx.controls.target.lerpVectors(from, to, k) })
+  }
+
+  const refresh = (ghost = -1): void => {
+    const at = currentNode(game, graph)
+    const moves = enabledMoves()
+    view.reveal(at, null)
+    const frontier = new Set<number>()
+    for (const e of moves.values()) {
+      view.reveal(graph.edges[e].to, at)
+      frontier.add(graph.edges[e].to)
+    }
+    view.setStyles({
+      current: at,
+      frontier,
+      traceEdges: new Set(game.moves),
+      enabledEdges: new Set(moves.values()),
+      highlight: ghost,
+    })
+    hud.updateVars(graph.nodes[at].state, prevState)
+    hud.setEnabledActions(new Set(moves.keys()))
+    hud.setInvariantViolated(graph.nodes[at].violating)
+    hud.setMoves(`coups : ${game.moves.length} — par : ${graph.par}`)
+    hud.setTrace(game.moves.map((e) => graph.edges[e].action))
+    if (graph.nodes[at].violating) {
+      locked = true
+      const trace = game.moves.map((e) => graph.edges[e].action)
+      const medal =
+        game.moves.length === graph.par
+          ? 'trace optimale — scheduler parfaitement démoniaque'
+          : `optimum : ${graph.par} coups`
+      win(
+        game.moves.length,
+        'Invariant violé',
+        `<p>${trace.join(' → ')}</p><p><b>${game.moves.length}</b> coups — ${medal}</p>`,
+      )
+    } else if (moves.size === 0) {
+      hud.setHint('aucune action activée — annulez un coup')
+    } else {
+      hud.setHint('')
+    }
+    glideTo(at)
+  }
+
+  const editor = new FormulaEditor({
+    parent: hud.editorMount,
+    placeholder: 'nom d’une action activée, puis Entrée',
+    completions: () =>
+      [...enabledMoves().entries()].map(([name, e]) => ({
+        label: name,
+        type: 'function',
+        detail: level.actionsSrc.find((a) => a.name === name)?.updateSrc,
+        boost: graph.nodes[graph.edges[e].to].violating ? 1 : 0,
+      })),
+    onChange: (text) => {
+      if (locked) return
+      const name = resolve(text)
+      const e = name === null ? undefined : enabledMoves().get(name)
+      view.setStyles({
+        current: currentNode(game, graph),
+        frontier: new Set([...enabledMoves().values()].map((x) => graph.edges[x].to)),
+        traceEdges: new Set(game.moves),
+        enabledEdges: new Set(enabledMoves().values()),
+        highlight: e === undefined ? -1 : graph.edges[e].to,
+      })
+    },
+    onSubmit: (text) => {
+      if (locked) return
+      const name = resolve(text)
+      const e = name === null ? undefined : enabledMoves().get(name)
+      if (e === undefined) return
+      prevState = graph.nodes[currentNode(game, graph)].state
+      game = play(game, graph, e)
+      editor.setText('')
+      refresh()
+    },
+    lint: (text) =>
+      resolve(text) !== null ? null : `« ${text} » : pas une action activée (Ctrl-Espace pour la liste)`,
+  })
+
+  refresh()
+  editor.focus()
+
+  return {
+    onReset: () => {
+      game = newGame(level.id)
+      prevState = null
+      locked = false
+      editor.setText('')
+      refresh()
+      editor.focus()
+    },
+    onUndo: () => {
+      if (!locked && game.moves.length > 0) {
+        game = undo(game)
+        prevState = null
+        refresh()
+        editor.focus()
+      }
+    },
+  }
+}
+
+// ——— MODE match : caractériser un ensemble d'états ———
+
+const GOOD = new THREE.Color(0x3fae6a) // cible ∩ formule
+const MISS = new THREE.Color(0xff3b52) // cible manquée
+const EXTRA = new THREE.Color(0xf2f6ff) // sélectionné hors cible
+
+function setupMatch(
+  level: CompiledLevel,
+  graph: Graph,
+  ctx: SceneCtx,
+  view: GraphView,
+  hud: Hud,
+  win: Win,
+): ModeHooks {
+  const target = matchStates(graph, level.target!)
+  let locked = false
+  view.revealAll()
+  ctx.controls.target.set(0, 0, 0)
+
+  const preview = (matched: ReadonlySet<number>): void => {
+    const overrides = new Map<number, THREE.Color>()
+    for (const i of target) overrides.set(i, matched.has(i) ? GOOD : MISS)
+    for (const i of matched) if (!target.has(i)) overrides.set(i, EXTRA)
+    view.setStyles({ ...noStyles, overrides })
+  }
+
+  const status = (matched: ReadonlySet<number> | null, text: string): void => {
+    if (matched === null) {
+      hud.setStatus(`cible : <b>${target.size}</b> états — ${text}`)
+      return
+    }
+    let good = 0
+    for (const i of matched) if (target.has(i)) good++
+    const extra = matched.size - good
+    hud.setStatus(
+      `<b>${good}/${target.size}</b> corrects` +
+        (extra > 0 ? `, <b>${extra}</b> en trop` : '') +
+        (text !== '' ? ` — ${text}` : ''),
+    )
+  }
+
+  const editor = new FormulaEditor({
+    parent: hud.editorMount,
+    placeholder: 'formule d’état — ex. n = 3 (Ctrl-Espace : complétion)',
+    completions: () => formulaCompletions(level),
+    onChange: (text) => {
+      if (locked) return
+      if (text === '') {
+        preview(EMPTY)
+        status(null, 'tapez une formule')
+        return
+      }
+      let matched: Set<number>
+      try {
+        matched = matchStates(graph, parseExpr(text))
+      } catch {
+        return // le lint souligne déjà ; on garde le dernier aperçu
+      }
+      preview(matched)
+      const tokens = countTokens(text)
+      status(matched, `${tokens} tokens`)
+      if (sameSet(matched, target)) {
+        locked = true
+        win(
+          tokens,
+          'Caractérisation exacte',
+          `<p class="formula">${text}</p><p><b>${tokens}</b> tokens</p>`,
+        )
+      }
+    },
+    onSubmit: () => undefined, // tout est live, Entrée n'a rien à faire
+    lint: (text) => {
+      try {
+        matchStates(graph, parseExpr(text))
+        return null
+      } catch (err) {
+        return (err as Error).message
+      }
+    },
+  })
+
+  hud.updateVars(level.init, null)
+  hud.setEnabledActions(EMPTY as unknown as Set<string>)
+  preview(EMPTY)
+  status(null, 'tapez une formule')
+  editor.focus()
+
+  return {
+    onReset: () => {
+      locked = false
+      editor.setText('')
+      preview(EMPTY)
+      status(null, 'tapez une formule')
+      editor.focus()
+    },
+  }
+}
+
+// ——— MODE repair : renforcer les gardes ———
+
+function setupRepair(
+  level: CompiledLevel,
+  graph: Graph,
+  ctx: SceneCtx,
+  view: GraphView,
+  hud: Hud,
+  win: Win,
+): ModeHooks {
+  let locked = false
+  view.revealAll()
+  ctx.controls.target.set(0, 0, 0)
+  const editors = new Map<string, FormulaEditor>()
+
+  const recompute = (): void => {
+    if (locked) return
+    const extras = new Map<string, ReturnType<typeof parseExpr>>()
+    for (const [action, ed] of editors) {
+      const text = ed.getText()
+      if (text === '') continue
+      try {
+        extras.set(action, parseExpr(text))
+      } catch {
+        return // slot invalide : le lint souligne, on fige l'aperçu
+      }
+    }
+    let result
+    try {
+      result = checkRepair(graph, extras, level.requires)
+    } catch {
+      return
+    }
+    view.setStyles({
+      ...noStyles,
+      dimmed: result.unreachable,
+      killedEdges: result.killedEdges,
+    })
+    hud.setRequires(result.requiresOk)
+    const reqOk = result.requiresOk.filter(Boolean).length
+    const tokens = [...editors.values()].reduce((n, ed) => n + countTokens(ed.getText()), 0)
+    hud.setStatus(
+      `${result.safe ? 'plus aucune violation atteignable ✓' : 'violation encore atteignable'}` +
+        ` — REQUIRE : <b>${reqOk}/${level.requires.length}</b>` +
+        ` — transitions tuées : ${result.killedEdges.size} — ${tokens} tokens`,
+    )
+    if (result.safe && reqOk === level.requires.length && extras.size > 0) {
+      locked = true
+      const parts = [...editors.entries()]
+        .filter(([, ed]) => ed.getText() !== '')
+        .map(([a, ed]) => `${a} : ∧ ${ed.getText()}`)
+      win(
+        tokens,
+        'Système réparé',
+        `<p class="formula">${parts.join('<br>')}</p><p><b>${tokens}</b> tokens ajoutés</p>`,
+      )
+    }
+  }
+
+  for (const action of level.repairables) {
+    const mount = hud.repairMounts.get(action)!
+    editors.set(
+      action,
+      new FormulaEditor({
+        parent: mount,
+        placeholder: 'renfort…',
+        completions: () => formulaCompletions(level),
+        onChange: () => recompute(),
+        onSubmit: () => recompute(),
+        lint: (text) => {
+          try {
+            parseExpr(text)
+            // Vérifie l'évaluabilité sur un état (variables connues).
+            checkRepair(graph, new Map([[action, parseExpr(text)]]), [])
+            return null
+          } catch (err) {
+            return (err as Error).message
+          }
+        },
+      }),
+    )
+  }
+
+  hud.updateVars(level.init, null)
+  hud.setEnabledActions(new Set(level.repairables))
+  view.setStyles(noStyles)
+  hud.setStatus('renforcez les gardes surlignées — l’aperçu est immédiat')
+  recompute()
+
+  return {
+    onReset: () => {
+      locked = false
+      for (const ed of editors.values()) ed.setText('')
+      view.setStyles(noStyles)
+      recompute()
+    },
+  }
+}
+
+loadLevel(Math.min(progress.unlocked, levels.length - 1))

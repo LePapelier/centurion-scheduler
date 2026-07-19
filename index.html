@@ -25,6 +25,30 @@
       .panel h1 { margin: 0 0 6px; font-size: 15px; color: #f2f6ff; font-weight: 600; }
       .panel .desc { margin: 0 0 10px; color: #8d99ad; }
       .panel .moves { color: #ffb04d; margin: 10px 0 0; }
+      .panel .status { color: #8d99ad; margin: 8px 0 0; }
+      .panel .status b { color: #ffb04d; }
+
+      .levels { display: flex; gap: 5px; margin-bottom: 12px; flex-wrap: wrap; }
+      .levels .lvl {
+        min-width: 30px; padding: 3px 0; text-align: center;
+        border-radius: 5px; font-size: 12px;
+      }
+      .levels .lvl.active { border-color: #7a88ff; color: #f2f6ff; }
+      .levels .lvl:disabled { opacity: 0.35; cursor: default; }
+
+      .tutorial {
+        margin: 0 0 8px; padding: 8px 10px;
+        background: rgba(122, 136, 255, 0.07);
+        border-left: 3px solid #7a88ff; border-radius: 0 6px 6px 0;
+        color: #aab6d8;
+      }
+      .goal { margin: 0 0 10px; color: #6ec8ff; font-weight: 600; }
+
+      .editor-mount { margin-top: 10px; }
+      .editor-mount:empty { display: none; }
+      .slot-editor { display: inline-block; vertical-align: middle; margin-left: 2px; }
+      .slot-editor .cm-editor { display: inline-block; min-width: 190px; }
+      .formula { color: #d9a441; }
 
       .spec { border-top: 1px solid #232c3f; padding-top: 10px; }
       .spec .kw { color: #7a88ff; font-weight: 600; }
@@ -42,8 +66,14 @@
       .spec .action.enabled .aname { color: #ffb04d; font-weight: 600; }
       .spec .action.enabled .guard { color: #8fd0a0; }
       .spec .action.enabled:hover, .spec .action.hovered { background: #1d2740; }
+      .spec .action.repairable { color: #cdd6e4; }
+      .spec .action.repairable .aname { color: #ffb04d; font-weight: 600; }
       .spec .inv { margin-top: 10px; color: #8d99ad; }
       .spec .inv.violated .src { color: #ff3b52; font-weight: 600; }
+      .spec .req { color: #8d99ad; }
+      .spec .req.ok .src { color: #3fae6a; }
+      .spec .req .kw { color: #55607a; }
+      .spec .req.ok .kw { color: #3fae6a; }
 
       .panel .hint { margin-top: 8px; color: #6ec8ff; min-height: 1.5em; }
       .panel .trace { margin-top: 8px; color: #d9a441; word-break: break-word; }

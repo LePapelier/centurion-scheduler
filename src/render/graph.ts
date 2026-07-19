@@ -5,23 +5,19 @@ import type { SceneCtx } from './scene'
 export interface Styles {
   readonly current: number
   readonly frontier: ReadonlySet<number> // successeurs cliquables
-  readonly onTrace: ReadonlySet<number>
   readonly traceEdges: ReadonlySet<number>
   readonly enabledEdges: ReadonlySet<number>
+  /** Nœud à faire ressortir (survol d'une action dans la spec), ou -1. */
+  readonly highlight: number
 }
 
-const NODE = {
-  base: new THREE.Color(0x4a5670),
-  onTrace: new THREE.Color(0x9a7428), // or éteint — bien distinct de la frontière
-  current: new THREE.Color(0xf2f6ff),
-  frontier: new THREE.Color(0xff8c26), // orange vif pulsant = cliquable
-  violating: new THREE.Color(0xff3b52),
-}
 const EDGE = {
   base: new THREE.Color(0x252c3d),
   enabled: new THREE.Color(0x8a5a20),
   trace: new THREE.Color(0xd9a441),
 }
+const WHITE = new THREE.Color(0xffffff)
+const FRONTIER_TINT = new THREE.Color(0xffb04d)
 
 function haloTexture(): THREE.Texture {
   const size = 128
@@ -37,12 +33,37 @@ function haloTexture(): THREE.Texture {
   return new THREE.CanvasTexture(canvas)
 }
 
+function labelSprite(text: string): THREE.Sprite {
+  const font = '28px ui-monospace, Menlo, monospace'
+  const measure = document.createElement('canvas').getContext('2d')!
+  measure.font = font
+  const w = Math.ceil(measure.measureText(text).width) + 12
+  const h = 38
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const g = canvas.getContext('2d')!
+  g.font = font
+  g.fillStyle = 'rgba(13, 17, 26, 0.65)'
+  g.fillRect(0, 0, w, h)
+  g.fillStyle = '#cdd6e4'
+  g.textBaseline = 'middle'
+  g.fillText(text, 6, h / 2 + 1)
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthWrite: false, transparent: true }),
+  )
+  const k = 0.011
+  sprite.scale.set(w * k, h * k, 1)
+  return sprite
+}
+
 /**
  * Vue du graphe : une seule InstancedMesh pour les nœuds, un seul
- * LineSegments pour les arêtes. Brouillard de guerre : les nœuds non
- * révélés ont une échelle nulle, les arêtes non révélées sont dégénérées.
- * Les positions cibles viennent du layout figé ; seules les éclosions
- * (position parent → cible, échelle 0 → 1) sont animées.
+ * LineSegments pour les arêtes, une étiquette-sprite par nœud révélé.
+ * La couleur d'un nœud est SÉMANTIQUE (fournie par le niveau) ; le statut
+ * de jeu passe par le halo (courant), la pulsation (frontière) et les
+ * arêtes (trace or, transitions activées orange). Brouillard de guerre :
+ * échelle nulle et arêtes dégénérées pour le non-révélé.
  */
 export class GraphView {
   private readonly graph: Graph
@@ -50,6 +71,10 @@ export class GraphView {
   private readonly display: Float32Array // positions affichées (animées à l'éclosion)
   private readonly revealScale: Float32Array // 0 → 1 à l'éclosion
   readonly revealed: boolean[]
+
+  private readonly nodeColors: readonly THREE.Color[]
+  private readonly labels: (THREE.Sprite | null)[]
+  private readonly labelTexts: readonly string[]
 
   private readonly nodesMesh: THREE.InstancedMesh
   private readonly edgeGeom: THREE.BufferGeometry
@@ -59,21 +84,31 @@ export class GraphView {
   private styles: Styles = {
     current: 0,
     frontier: new Set(),
-    onTrace: new Set(),
     traceEdges: new Set(),
     enabledEdges: new Set(),
+    highlight: -1,
   }
   private readonly dummy = new THREE.Object3D()
   private readonly raycaster = new THREE.Raycaster()
+  private readonly tmpColor = new THREE.Color()
 
-  constructor(ctx: SceneCtx, graph: Graph, positions: Float32Array) {
+  constructor(
+    ctx: SceneCtx,
+    graph: Graph,
+    positions: Float32Array,
+    nodeColors: readonly THREE.Color[],
+    labelTexts: readonly string[],
+  ) {
     this.ctx = ctx
     this.graph = graph
     this.target = positions
     this.display = positions.slice()
+    this.nodeColors = nodeColors
+    this.labelTexts = labelTexts
     const n = graph.nodes.length
     this.revealScale = new Float32Array(n)
     this.revealed = new Array(n).fill(false)
+    this.labels = new Array(n).fill(null)
 
     this.nodesMesh = new THREE.InstancedMesh(
       new THREE.IcosahedronGeometry(0.32, 2),
@@ -81,7 +116,7 @@ export class GraphView {
       n,
     )
     this.nodesMesh.frustumCulled = false
-    for (let i = 0; i < n; i++) this.nodesMesh.setColorAt(i, NODE.base)
+    for (let i = 0; i < n; i++) this.nodesMesh.setColorAt(i, nodeColors[i])
     ctx.scene.add(this.nodesMesh)
 
     this.edgePos = new Float32Array(graph.edges.length * 6)
@@ -125,6 +160,11 @@ export class GraphView {
   reveal(i: number, from: number | null): void {
     if (this.revealed[i]) return
     this.revealed[i] = true
+    if (this.labels[i] === null && this.labelTexts[i] !== '') {
+      const sprite = labelSprite(this.labelTexts[i])
+      this.labels[i] = sprite
+      this.ctx.scene.add(sprite)
+    }
     const origin = from === null ? i : from
     for (let a = 0; a < 3; a++) this.display[i * 3 + a] = this.target[origin * 3 + a]
     this.ctx.addTween({
@@ -141,14 +181,11 @@ export class GraphView {
 
   setStyles(styles: Styles): void {
     this.styles = styles
-    const color = new THREE.Color()
     for (let i = 0; i < this.graph.nodes.length; i++) {
-      if (this.graph.nodes[i].violating && this.revealed[i]) color.copy(NODE.violating)
-      else if (i === styles.current) color.copy(NODE.current)
-      else if (styles.frontier.has(i)) color.copy(NODE.frontier)
-      else if (styles.onTrace.has(i)) color.copy(NODE.onTrace)
-      else color.copy(NODE.base)
-      this.nodesMesh.setColorAt(i, color)
+      this.tmpColor.copy(this.nodeColors[i])
+      if (styles.frontier.has(i)) this.tmpColor.lerp(FRONTIER_TINT, 0.45)
+      if (i === styles.highlight) this.tmpColor.lerp(WHITE, 0.45)
+      this.nodesMesh.setColorAt(i, this.tmpColor)
     }
     this.nodesMesh.instanceColor!.needsUpdate = true
 
@@ -176,15 +213,23 @@ export class GraphView {
 
   private updateFrame(time: number): void {
     const { graph, dummy } = this
-    // Matrices d'instances : tout est réécrit chaque frame — trivial à ces tailles.
+    // Tout est réécrit chaque frame — trivial à ces tailles de graphe.
     for (let i = 0; i < graph.nodes.length; i++) {
       let s = this.revealed[i] ? this.revealScale[i] : 0
       if (i === this.styles.current) s *= 1.35
       else if (this.styles.frontier.has(i)) s *= 1 + 0.13 * Math.sin(time * 0.005 + i * 1.7)
+      if (i === this.styles.highlight) s *= 1.25
       dummy.position.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
       dummy.scale.setScalar(Math.max(s, 1e-4))
       dummy.updateMatrix()
       this.nodesMesh.setMatrixAt(i, dummy.matrix)
+
+      const label = this.labels[i]
+      if (label !== null) {
+        label.position.set(this.display[i * 3], this.display[i * 3 + 1] - 0.72, this.display[i * 3 + 2])
+        const mat = label.material as THREE.SpriteMaterial
+        mat.opacity = this.revealScale[i]
+      }
     }
     this.nodesMesh.instanceMatrix.needsUpdate = true
 
@@ -206,8 +251,7 @@ export class GraphView {
       this.display[cur * 3 + 2],
     )
     const mat = this.halo.material as THREE.SpriteMaterial
-    const violating = this.graph.nodes[cur].violating
-    mat.color.set(violating ? 0xff3b52 : 0x6ec8ff)
+    mat.color.set(this.graph.nodes[cur].violating ? 0xff3b52 : 0x6ec8ff)
     mat.opacity = 0.55 + 0.25 * Math.sin(time * 0.004)
   }
 }

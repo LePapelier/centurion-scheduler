@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { mutex } from '../levels/mutex'
+import { levels } from '../levels'
 import { explore } from './explore'
+
+const mutex = levels[0]
 import { stateKey } from './spec'
 
 describe('explore(mutex)', () => {

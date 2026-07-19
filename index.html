@@ -16,16 +16,35 @@
       #app canvas { display: block; }
 
       .panel {
-        position: absolute; top: 16px; left: 16px; width: 320px;
-        background: rgba(13, 17, 26, 0.85);
+        position: absolute; top: 16px; left: 16px; width: 480px;
+        max-height: calc(100% - 32px); overflow-y: auto;
+        background: rgba(13, 17, 26, 0.88);
         border: 1px solid #232c3f; border-radius: 8px;
         padding: 14px 16px; backdrop-filter: blur(4px);
       }
       .panel h1 { margin: 0 0 6px; font-size: 15px; color: #f2f6ff; font-weight: 600; }
       .panel .desc { margin: 0 0 10px; color: #8d99ad; }
-      .panel .moves { color: #ffb04d; margin-bottom: 8px; }
-      .panel .state .var { margin-right: 8px; color: #8d99ad; }
-      .panel .state b { color: #cdd6e4; font-weight: 600; }
+      .panel .moves { color: #ffb04d; margin: 10px 0 0; }
+
+      .spec { border-top: 1px solid #232c3f; padding-top: 10px; }
+      .spec .kw { color: #7a88ff; font-weight: 600; }
+      .spec .vars { margin: 4px 0 10px; padding-left: 14px; }
+      .spec .var { display: inline-block; margin-right: 14px; color: #8d99ad; }
+      .spec .var b { color: #cdd6e4; font-weight: 600; }
+      .spec .var.changed b { color: #ffb04d; }
+      .spec .action {
+        padding: 2px 6px 2px 2.4em; margin: 1px -6px; border-radius: 5px;
+        color: #55607a; text-indent: -2.05em; transition: background 0.12s;
+      }
+      .spec .action .kw { color: #55607a; }
+      .spec .action.enabled { color: #cdd6e4; cursor: pointer; }
+      .spec .action.enabled .kw { color: #7a88ff; }
+      .spec .action.enabled .aname { color: #ffb04d; font-weight: 600; }
+      .spec .action.enabled .guard { color: #8fd0a0; }
+      .spec .action.enabled:hover, .spec .action.hovered { background: #1d2740; }
+      .spec .inv { margin-top: 10px; color: #8d99ad; }
+      .spec .inv.violated .src { color: #ff3b52; font-weight: 600; }
+
       .panel .hint { margin-top: 8px; color: #6ec8ff; min-height: 1.5em; }
       .panel .trace { margin-top: 8px; color: #d9a441; word-break: break-word; }
       .panel .trace .arrow { color: #55607a; margin: 0 4px; }

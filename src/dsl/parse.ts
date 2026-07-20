@@ -223,6 +223,32 @@ export function parseExpr(src: string): Expr {
   return e
 }
 
+/**
+ * Remplace les identifiants-alias (noms de briques) par leur formule.
+ * Les variables d'état restent intactes ; pas de cycle possible : une
+ * brique ne peut référencer que des briques créées avant elle.
+ */
+export function substituteAliases(e: Expr, aliases: ReadonlyMap<string, Expr>): Expr {
+  switch (e.kind) {
+    case 'num':
+    case 'str':
+      return e
+    case 'var': {
+      const alias = aliases.get(e.name)
+      return alias === undefined ? e : alias
+    }
+    case 'not': {
+      const arg = substituteAliases(e.arg, aliases)
+      return arg === e.arg ? e : { kind: 'not', arg }
+    }
+    case 'bin': {
+      const left = substituteAliases(e.left, aliases)
+      const right = substituteAliases(e.right, aliases)
+      return left === e.left && right === e.right ? e : { ...e, left, right }
+    }
+  }
+}
+
 /** Nombre de tokens d'une formule (score golf). 0 si non tokenisable. */
 export function countTokens(src: string): number {
   try {
@@ -290,7 +316,7 @@ export function compileLevel(src: string): CompiledLevel {
   let colorExpr: Expr | null = null
   let labelVars: string[] = []
   let mode: 'trace' | 'prove' = 'trace'
-  const lemmas: { src: string; expr: Expr }[] = []
+  const lemmas: { name: string; src: string; expr: Expr }[] = []
   const tutorial: string[] = []
   let goal = ''
   let inVariables = false
@@ -351,10 +377,19 @@ export function compileLevel(src: string): CompiledLevel {
         mode = rest
         break
       case 'LEMMA': {
-        const p = new P(tokenize(rest, lineNo), lineNo)
-        const expr = p.expr()
+        const m = rest.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(≜|==)\s*(.*)$/)
+        if (!m) throw new Error(`ligne ${lineNo} : attendu « LEMMA nom ≜ formule »`)
+        const p = new P(tokenize(m[3], lineNo), lineNo)
+        const parsed = p.expr()
         if (!p.atEnd()) throw new Error(`ligne ${lineNo} : « ${p.peek()!.text} » inattendu`)
-        lemmas.push({ src: rest, expr })
+        // Un lemme peut réutiliser les alias des lemmes précédents.
+        const expr = substituteAliases(
+          parsed,
+          new Map(lemmas.map((l) => [l.name, l.expr])),
+        )
+        if (lemmas.some((l) => l.name === m[1]))
+          throw new Error(`ligne ${lineNo} : brique « ${m[1]} » déjà définie`)
+        lemmas.push({ name: m[1], src: m[3], expr })
         break
       }
       case 'TUTORIAL':
@@ -392,6 +427,9 @@ export function compileLevel(src: string): CompiledLevel {
   if (id === '') throw new Error('directive LEVEL manquante')
   if (actions.length === 0) throw new Error('aucune ACTION déclarée')
   if (invariant === null) throw new Error('directive INVARIANT manquante')
+  for (const lemma of lemmas)
+    if (init[lemma.name] !== undefined)
+      throw new Error(`LEMMA « ${lemma.name} » : nom déjà pris par une variable`)
   if (mode === 'prove')
     // L'induction quantifie sur l'espace COMPLET : chaque variable doit
     // avoir un domaine déclaré pour qu'on puisse l'énumérer.

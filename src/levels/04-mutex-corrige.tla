@@ -2,9 +2,9 @@ LEVEL p2-mutex-corrige
 NAME Le mutex corrigé
 MODE prove
 DESC Le mutex du niveau 2, corrigé : l'entrée re-vérifie le drapeau adverse. Vous l'avez cassé — prouvez maintenant que celui-ci tient.
-TUTORIAL L'invariant n'est PAS inductif seul : des états fantômes (assombris) le satisfont puis s'en échappent. Tapez-le tel quel pour voir les CTI — puis regardez la brique DONNÉE : elle interdit les fantômes absurdes du processus 0.
-TUTORIAL Les CTI restants viennent des fantômes symétriques : pc1 = "crit" avec flag1 = 0. Prouvez la brique miroir de celle donnée (⇒ se tape =>), puis l'invariant.
-GOAL Prouvez l'INVARIANT : une brique miroir, puis lui.
+TUTORIAL Tapez l'invariant tel quel : des états fantômes (assombris) s'en échappent — il n'est pas inductif seul. La brique donnée C0 interdit les fantômes absurdes du processus 0 ; il manque la miroir côté processus 1.
+TUTORIAL Une brique se nomme : « C1 ≜ votre formule ». Son nom se réutilise ensuite tel quel — inutile de retaper C0.
+GOAL Prouvez l'INVARIANT : une brique miroir C1, puis lui.
 
 VARIABLES
   pc0 ∈ {"idle", "ready", "crit"} = "idle"
@@ -20,6 +20,6 @@ ACTION enter1 ≜ pc1 = "ready" ∧ flag0 = 0 → pc1 := "crit" ∧ flag1 := 1
 ACTION exit1  ≜ pc1 = "crit" → pc1 := "idle" ∧ flag1 := 0
 
 INVARIANT ¬(pc0 = "crit" ∧ pc1 = "crit")
-LEMMA pc0 = "crit" ⇒ flag0 = 1
+LEMMA C0 ≜ pc0 = "crit" ⇒ flag0 = 1
 COLOR (pc0 = "crit") + (pc1 = "crit")
 LABEL pc0, pc1

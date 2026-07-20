@@ -97,6 +97,30 @@ describe('checkCandidate (mutex corrigé)', () => {
   })
 })
 
+describe('alias de briques', () => {
+  const level = byId('p3-peterson')
+  const space = buildFullSpace(level)
+
+  it('les LEMMA sont nommés et substituables', async () => {
+    const { substituteAliases } = await import('../dsl/parse')
+    expect(level.lemmas.map((l) => l.name)).toEqual(['F0', 'F1'])
+    const aliases = new Map(level.lemmas.map((l) => [l.name, l.expr]))
+    // « F0 ∧ F1 » ≡ conjonction des deux lemmes, via alias.
+    const combo = substituteAliases(parseExpr('F0 ∧ F1'), aliases)
+    const direct = checkCandidate(space, [], combo)
+    expect(direct.ok).toBe(
+      checkCandidate(space, [], parseExpr('(pc0 ≠ "idle" ⇒ flag0 = 1) ∧ (pc1 ≠ "idle" ⇒ flag1 = 1)')).ok,
+    )
+  })
+
+  it('nom de lemme en collision avec une variable rejeté', async () => {
+    const { compileLevel } = await import('../dsl/parse')
+    expect(() =>
+      compileLevel('LEVEL x\nMODE prove\nVARIABLES\n  a ∈ {0, 1} = 0\nACTION t ≜ a = 0 → a := 1\nINVARIANT a ≥ 0\nLEMMA a ≜ a = 0'),
+    ).toThrow(/nom déjà pris/)
+  })
+})
+
 describe('checkCandidate (Peterson)', () => {
   const level = byId('p3-peterson')
   const space = buildFullSpace(level)

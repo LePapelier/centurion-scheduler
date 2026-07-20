@@ -9,8 +9,10 @@ export interface HudCallbacks {
 }
 
 export interface Brick {
+  /** Alias réutilisable dans les formules suivantes. */
+  readonly name: string
   readonly src: string
-  /** Formules des briques dont la preuve dépend (vide pour une brique donnée). */
+  /** Noms des briques dont la preuve dépend (vide pour une brique donnée). */
   readonly deps: readonly string[]
   readonly given: boolean
 }
@@ -165,7 +167,7 @@ export class Hud {
       .map(
         (b) => `
         <div class="brick${b.given ? ' given' : ''}">
-          <span class="box">□</span> <span class="src">${b.src}</span>
+          <span class="box">□</span> <span class="bname">${b.name}</span> ≜ <span class="src">${b.src}</span>
           ${b.given ? '<span class="tag">donnée</span>' : ''}
           ${b.deps.length > 0 ? `<div class="deps">└ s'appuie sur : ${b.deps.map((d) => `<span class="dep">${d}</span>`).join(' · ')}</div>` : ''}
         </div>`,

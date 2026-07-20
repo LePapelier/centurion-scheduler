@@ -5,7 +5,7 @@ import { buildFullSpace, type FullSpace } from './core/fullspace'
 import { currentNode, newGame, play, undo, type Game } from './core/game'
 import { checkCandidate, impliesGoal, usedBricks } from './core/prove'
 import type { CompiledLevel, Expr } from './dsl/ast'
-import { countTokens, parseExpr } from './dsl/parse'
+import { countTokens, parseExpr, substituteAliases } from './dsl/parse'
 import { layout } from './layout/force'
 import { levels } from './levels'
 import { GraphView } from './render/graph'
@@ -359,12 +359,35 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   for (let i = 0; i < graph.nodes.length; i++) if (!space.reachable.has(i)) faint.add(i)
 
   let bricks: ProofBrick[] = level.lemmas.map((l) => ({
+    name: l.name,
     src: l.src,
     expr: l.expr,
     deps: [],
     given: true,
   }))
   let locked = false
+
+  /** Alias : chaque brique est réutilisable par son nom dans les formules. */
+  const aliases = (): Map<string, Expr> => new Map(bricks.map((b) => [b.name, b.expr]))
+
+  const autoName = (): string => {
+    for (let i = bricks.length + 1; ; i++) {
+      const name = `L${i}`
+      if (!bricks.some((b) => b.name === name) && level.init[name] === undefined) return name
+    }
+  }
+
+  /** « nom ≜ formule » ou formule nue ; alias substitués. Lève si invalide. */
+  const parseCandidate = (text: string): { name: string | null; src: string; expr: Expr } => {
+    const m = text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(?:≜|==)\s*(.+)$/)
+    const name = m?.[1] ?? null
+    const src = m?.[2].trim() ?? text
+    if (name !== null) {
+      if (level.init[name] !== undefined) throw new Error(`« ${name} » est une variable`)
+      if (bricks.some((b) => b.name === name)) throw new Error(`brique « ${name} » déjà prise`)
+    }
+    return { name, src, expr: substituteAliases(parseExpr(src), aliases()) }
+  }
 
   const baseStyles = {
     current: space.init,
@@ -400,7 +423,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     }
     let report
     try {
-      report = checkCandidate(space, bricks.map((b) => b.expr), parseExpr(text))
+      report = checkCandidate(space, bricks.map((b) => b.expr), parseCandidate(text).expr)
     } catch {
       return null // le lint souligne déjà
     }
@@ -428,8 +451,11 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
 
   const editor = new FormulaEditor({
     parent: hud.editorMount,
-    placeholder: 'formule candidate — sa région s’éclaire, Entrée pour prouver',
-    completions: () => formulaCompletions(level),
+    placeholder: 'formule, ou nom ≜ formule — les noms de briques sont réutilisables',
+    completions: () => [
+      ...bricks.map((b) => ({ label: b.name, detail: `□ ${b.src}`, type: 'class', boost: 2 })),
+      ...formulaCompletions(level),
+    ],
     onChange: (text) => {
       if (!locked) preview(text)
     },
@@ -437,12 +463,13 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       if (locked || text === '') return
       const report = preview(text)
       if (report === null || !report.ok) return
-      const expr = parseExpr(text)
+      const { name, src, expr } = parseCandidate(text)
       const used = usedBricks(space, bricks.map((b) => b.expr), expr)
       bricks = [...bricks, {
-        src: text,
+        name: name ?? autoName(),
+        src,
         expr,
-        deps: bricks.filter((_, i) => used[i]).map((b) => b.src),
+        deps: bricks.filter((_, i) => used[i]).map((b) => b.name),
         given: false,
       }]
       hud.renderBricks(bricks)
@@ -454,7 +481,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
         const score = bricks.filter((b) => !b.given).reduce((n, b) => n + countTokens(b.src), 0)
         const wall = bricks
           .filter((b) => !b.given)
-          .map((b) => `□ ${b.src}`)
+          .map((b) => `□ ${b.name} ≜ ${b.src}`)
           .join('<br>')
         win(
           score,
@@ -465,7 +492,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     },
     lint: (text) => {
       try {
-        checkCandidate(space, [], parseExpr(text))
+        checkCandidate(space, [], parseCandidate(text).expr)
         return null
       } catch (err) {
         return (err as Error).message

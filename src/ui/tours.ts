@@ -57,7 +57,7 @@ export const tours: Record<string, readonly TourStep[]> = {
     },
     {
       target: '.bricks',
-      html: 'Ceci est votre <b>mur de briques</b> : chaque formule prouvée devient une brique, réutilisable comme hypothèse pour prouver les suivantes. L’arbre de vos briques EST votre preuve.',
+      html: 'Ceci est votre <b>mur de briques</b> : chaque formule prouvée devient une brique nommée (<code>nom ≜ formule</code>, sinon nom automatique), et son <b>nom se réutilise tel quel</b> dans les formules suivantes. L’arbre de vos briques EST votre preuve.',
       gate: 'next',
     },
     {

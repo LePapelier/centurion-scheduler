@@ -84,6 +84,29 @@
       .goal-status.proved { color: #3fae6a; }
       .goal-status.proved b { color: #3fae6a; }
 
+      .inspector {
+        position: absolute; z-index: 30; min-width: 190px; max-width: 260px;
+        background: rgba(13, 17, 26, 0.95);
+        border: 1px solid #3a4a70; border-radius: 8px;
+        padding: 10px 12px;
+        box-shadow: 0 6px 30px rgba(0, 0, 0, 0.5);
+      }
+      .inspector .close {
+        position: absolute; top: 4px; right: 4px;
+        background: none; border: none; color: #55607a; padding: 2px 6px;
+      }
+      .inspector .close:hover { color: #cdd6e4; background: none; }
+      .inspector .row { color: #8d99ad; }
+      .inspector .row b { color: #f2f6ff; }
+      .inspector .badge {
+        display: inline-block; margin: 6px 6px 0 0; padding: 1px 8px;
+        border-radius: 4px; font-size: 11px;
+      }
+      .inspector .badge.ok { background: rgba(63, 174, 106, 0.15); color: #3fae6a; }
+      .inspector .badge.ghost { background: rgba(85, 96, 122, 0.25); color: #8d99ad; }
+      .inspector .badge.bad { background: rgba(255, 59, 82, 0.15); color: #ff3b52; }
+      .inspector .note { margin-top: 6px; color: #ffb04d; font-size: 11px; }
+
       .tour-bubble {
         position: fixed; z-index: 200; width: 340px;
         background: #141b2c; border: 1px solid #6ec8ff; border-radius: 10px;

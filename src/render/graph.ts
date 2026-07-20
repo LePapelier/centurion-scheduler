@@ -25,6 +25,7 @@ const EDGE = {
   enabled: new THREE.Color(0x8a5a20),
   trace: new THREE.Color(0xd9a441),
   cti: new THREE.Color(0xff3b52),
+  selected: new THREE.Color(0xffb04d),
 }
 const BG = new THREE.Color(0x0b0e14)
 const WHITE = new THREE.Color(0xffffff)
@@ -44,7 +45,7 @@ function haloTexture(): THREE.Texture {
   return new THREE.CanvasTexture(canvas)
 }
 
-function labelSprite(text: string): THREE.Sprite {
+function labelSprite(text: string, color = '#cdd6e4', k = 0.011): THREE.Sprite {
   const font = '28px ui-monospace, Menlo, monospace'
   const measure = document.createElement('canvas').getContext('2d')!
   measure.font = font
@@ -57,16 +58,18 @@ function labelSprite(text: string): THREE.Sprite {
   g.font = font
   g.fillStyle = 'rgba(13, 17, 26, 0.65)'
   g.fillRect(0, 0, w, h)
-  g.fillStyle = '#cdd6e4'
+  g.fillStyle = color
   g.textBaseline = 'middle'
   g.fillText(text, 6, h / 2 + 1)
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthWrite: false, transparent: true }),
   )
-  const k = 0.011
   sprite.scale.set(w * k, h * k, 1)
   return sprite
 }
+
+/** Au-delà de ce nombre de nœuds, seuls les états atteignables (et la sélection) gardent leur étiquette. */
+const LABEL_DENSITY_LIMIT = 60
 
 /**
  * Vue du graphe : une seule InstancedMesh pour les nœuds, un seul
@@ -102,6 +105,9 @@ export class GraphView {
   private readonly dummy = new THREE.Object3D()
   private readonly raycaster = new THREE.Raycaster()
   private readonly tmpColor = new THREE.Color()
+  /** Nœud sélectionné (inspection) : surligné, flèches sortantes étiquetées. */
+  private selected: number | null = null
+  private readonly edgeLabels = new Map<number, THREE.Sprite>()
 
   constructor(
     ctx: SceneCtx,
@@ -204,8 +210,37 @@ export class GraphView {
     })
   }
 
+  /** Sélectionne un nœud : surlignage + étiquettes d'action sur ses flèches sortantes. */
+  setSelected(i: number | null): void {
+    this.selected = i
+    for (const sprite of this.edgeLabels.values()) {
+      sprite.removeFromParent()
+      const mat = sprite.material as THREE.SpriteMaterial
+      mat.map?.dispose()
+      mat.dispose()
+    }
+    this.edgeLabels.clear()
+    if (i !== null) {
+      for (const e of this.graph.successors[i]) {
+        const sprite = labelSprite(this.graph.edges[e].action, '#ffb04d', 0.0095)
+        this.edgeLabels.set(e, sprite)
+        this.ctx.scene.add(sprite)
+      }
+    }
+    this.applyStyles()
+  }
+
+  getSelected(): number | null {
+    return this.selected
+  }
+
   setStyles(styles: Styles): void {
     this.styles = styles
+    this.applyStyles()
+  }
+
+  private applyStyles(): void {
+    const styles = this.styles
     for (let i = 0; i < this.graph.nodes.length; i++) {
       this.tmpColor.copy(styles.overrides?.get(i) ?? this.nodeColors[i])
       if (styles.frontier.has(i)) this.tmpColor.lerp(FRONTIER_TINT, 0.45)
@@ -213,6 +248,7 @@ export class GraphView {
       if (styles.dimmed?.has(i)) this.tmpColor.lerp(BG, 0.62)
       // La région reste lisible même sur un état fantôme (appliquée après).
       if (styles.region?.has(i)) this.tmpColor.lerp(WHITE, 0.38)
+      if (i === this.selected) this.tmpColor.lerp(WHITE, 0.5)
       this.nodesMesh.setColorAt(i, this.tmpColor)
       const label = this.labels[i]
       if (label !== null)
@@ -222,13 +258,16 @@ export class GraphView {
 
     const edgeColors = this.edgeGeom.getAttribute('color') as THREE.BufferAttribute
     for (let e = 0; e < this.graph.edges.length; e++) {
+      const outgoing = this.selected !== null && this.graph.edges[e].from === this.selected
       const c = styles.ctiEdges?.has(e)
         ? EDGE.cti
-        : styles.traceEdges.has(e)
-          ? EDGE.trace
-          : styles.enabledEdges.has(e)
-            ? EDGE.enabled
-            : EDGE.base
+        : outgoing
+          ? EDGE.selected
+          : styles.traceEdges.has(e)
+            ? EDGE.trace
+            : styles.enabledEdges.has(e)
+              ? EDGE.enabled
+              : EDGE.base
       for (const v of [0, 1]) edgeColors.setXYZ(e * 2 + v, c.r, c.g, c.b)
     }
     edgeColors.needsUpdate = true
@@ -236,6 +275,9 @@ export class GraphView {
 
   /** Raycast → indice de nœud révélé, ou null. */
   pick(ndc: THREE.Vector2): number | null {
+    // three fige la sphère englobante au premier raycast ; si celui-ci part
+    // avant la première frame (matrices identité), tout pick rate ensuite.
+    this.nodesMesh.computeBoundingSphere()
     this.raycaster.setFromCamera(ndc, this.ctx.camera)
     for (const hit of this.raycaster.intersectObject(this.nodesMesh)) {
       const i = hit.instanceId
@@ -243,6 +285,7 @@ export class GraphView {
     }
     return null
   }
+
 
   private updateFrame(time: number): void {
     const { graph, dummy } = this
@@ -253,6 +296,7 @@ export class GraphView {
       else if (this.styles.frontier.has(i)) s *= 1 + 0.13 * Math.sin(time * 0.005 + i * 1.7)
       if (i === this.styles.highlight) s *= 1.25
       if (this.styles.dimmed?.has(i)) s *= 0.55
+      if (i === this.selected) s *= 1.3
       dummy.position.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
       dummy.scale.setScalar(Math.max(s, 1e-4))
       dummy.updateMatrix()
@@ -262,7 +306,12 @@ export class GraphView {
       if (label !== null) {
         label.position.set(this.display[i * 3], this.display[i * 3 + 1] - 0.72, this.display[i * 3 + 2])
         const mat = label.material as THREE.SpriteMaterial
-        mat.opacity = this.revealScale[i]
+        // Gros graphes : on tait les étiquettes des fantômes (l'inspecteur prend le relais).
+        const quiet =
+          graph.nodes.length > LABEL_DENSITY_LIMIT &&
+          this.styles.dimmed?.has(i) === true &&
+          i !== this.selected
+        mat.opacity = quiet ? 0 : this.revealScale[i]
       }
     }
     this.nodesMesh.instanceMatrix.needsUpdate = true
@@ -277,6 +326,16 @@ export class GraphView {
       }
     }
     this.edgeGeom.getAttribute('position').needsUpdate = true
+
+    for (const [e, sprite] of this.edgeLabels) {
+      const { from, to } = graph.edges[e]
+      sprite.position.set(
+        (this.display[from * 3] + this.display[to * 3]) / 2,
+        (this.display[from * 3 + 1] + this.display[to * 3 + 1]) / 2 + 0.18,
+        (this.display[from * 3 + 2] + this.display[to * 3 + 2]) / 2,
+      )
+      sprite.visible = this.revealed[from] && this.revealed[to]
+    }
 
     const cur = this.styles.current
     this.halo.visible = cur !== null

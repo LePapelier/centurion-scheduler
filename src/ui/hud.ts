@@ -33,6 +33,7 @@ export class Hud {
   private readonly victoryEl: HTMLElement
   private readonly victoryBody: HTMLElement
   private readonly nextBtn: HTMLButtonElement
+  private inspectorEl: HTMLElement
 
   /** Emplacement de l'éditeur (console trace, ou candidate prove). */
   readonly editorMount: HTMLElement
@@ -118,6 +119,10 @@ export class Hud {
     if (level.mode !== 'trace')
       (panel.querySelector('[data-act=undo]') as HTMLElement).style.display = 'none'
 
+    this.inspectorEl = document.createElement('div')
+    this.inspectorEl.className = 'inspector hidden'
+    root.appendChild(this.inspectorEl)
+
     this.victoryEl = document.createElement('div')
     this.victoryEl.className = 'victory hidden'
     this.victoryEl.innerHTML = `
@@ -190,6 +195,23 @@ export class Hud {
     this.traceEl.innerHTML = names
       .map((a) => `<span class="step">${a}</span>`)
       .join('<span class="arrow">→</span>')
+  }
+
+  /** Fenêtre d'inspection d'un état, près du point cliqué. */
+  showInspector(x: number, y: number, html: string, onClose: () => void): void {
+    this.inspectorEl.innerHTML = `<button class="close">✕</button>${html}`
+    this.inspectorEl.classList.remove('hidden')
+    this.inspectorEl.querySelector('.close')!.addEventListener('click', () => {
+      this.hideInspector()
+      onClose()
+    })
+    const w = 230
+    this.inspectorEl.style.left = `${Math.min(x + 16, window.innerWidth - w - 12)}px`
+    this.inspectorEl.style.top = `${Math.min(y + 12, window.innerHeight - this.inspectorEl.offsetHeight - 12)}px`
+  }
+
+  hideInspector(): void {
+    this.inspectorEl.classList.add('hidden')
   }
 
   showVictory(title: string, bodyHtml: string, hasNext: boolean): void {

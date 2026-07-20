@@ -56,6 +56,70 @@ function formulaCompletions(level: CompiledLevel): Completion[] {
 
 const EMPTY = new Set<number>()
 
+/**
+ * Inspection au clic : sélectionne un état → fenêtre avec la valuation,
+ * flèches sortantes étiquetées par leur action (dans GraphView).
+ * Un clic dans le vide (ou ✕) désélectionne. Le drag caméra n'inspecte pas.
+ */
+function attachInspection(
+  ctx: SceneCtx,
+  view: GraphView,
+  graph: Graph,
+  hud: Hud,
+  badges: (i: number) => string,
+): void {
+  const canvas = ctx.renderer.domElement
+  const ndc = new THREE.Vector2()
+  const toNdc = (ev: PointerEvent): THREE.Vector2 => {
+    const r = canvas.getBoundingClientRect()
+    return ndc.set(
+      ((ev.clientX - r.left) / r.width) * 2 - 1,
+      -((ev.clientY - r.top) / r.height) * 2 + 1,
+    )
+  }
+  // Hook e2e : le pick est injoignable par événements synthétiques fiables partout.
+  ;(window as unknown as Record<string, unknown>).__pick = (x: number, y: number) =>
+    view.pick(toNdc({ clientX: x, clientY: y } as PointerEvent))
+  ;(window as unknown as Record<string, unknown>).__view = view
+  ;(window as unknown as Record<string, unknown>).__nodeScreen = (i: number) => {
+    const p = view.nodePosition(i, new THREE.Vector3()).project(ctx.camera)
+    const r = canvas.getBoundingClientRect()
+    return [((p.x + 1) / 2) * r.width, ((1 - p.y) / 2) * r.height].map(Math.round)
+  }
+
+  let downAt: [number, number] | null = null
+  canvas.addEventListener('pointerdown', (ev) => {
+    downAt = [ev.clientX, ev.clientY]
+  })
+  canvas.addEventListener('pointermove', (ev) => {
+    if (ev.buttons === 0) canvas.style.cursor = view.pick(toNdc(ev)) === null ? '' : 'pointer'
+  })
+  canvas.addEventListener('pointerup', (ev) => {
+    if (downAt === null) return
+    const moved = Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1])
+    downAt = null
+    if (moved > 5) return
+    const hit = view.pick(toNdc(ev))
+    if (hit === null) {
+      view.setSelected(null)
+      hud.hideInspector()
+      return
+    }
+    view.setSelected(hit)
+    const state = graph.nodes[hit].state
+    const rows = Object.entries(state)
+      .map(([k, v]) => `<div class="row">${k} = <b>${JSON.stringify(v)}</b></div>`)
+      .join('')
+    const out = graph.successors[hit].length
+    hud.showInspector(
+      ev.clientX,
+      ev.clientY,
+      `${rows}${badges(hit)}<div class="note">${out === 0 ? 'aucune action possible' : `${out} action${out > 1 ? 's' : ''} — flèches étiquetées`}</div>`,
+      () => view.setSelected(null),
+    )
+  })
+}
+
 // ——— Chargement d'un niveau ———
 
 let disposeCurrent: (() => void) | null = null
@@ -136,6 +200,9 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     graph.edges.map((e) => [e.from, e.to] as const),
   )
   const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), nodeLabels(level, graph))
+  attachInspection(ctx, view, graph, hud, (i) =>
+    graph.nodes[i].violating ? '<div class="badge bad">viole l’INVARIANT</div>' : '',
+  )
 
   let game: Game = newGame(level.id)
   let prevState: (typeof level)['init'] | null = null
@@ -275,6 +342,16 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), labels)
   view.revealAll()
   ctx.controls.target.set(0, 0, 0)
+  attachInspection(ctx, view, graph, hud, (i) => {
+    const parts: string[] = []
+    parts.push(
+      space.reachable.has(i)
+        ? '<div class="badge ok">atteignable</div>'
+        : '<div class="badge ghost">état fantôme</div>',
+    )
+    if (graph.nodes[i].violating) parts.push('<div class="badge bad">viole l’INVARIANT</div>')
+    return parts.join('')
+  })
 
   const goal = parseExpr(level.invariantSrc)
   const faint = new Set<number>()

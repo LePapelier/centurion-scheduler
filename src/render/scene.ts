@@ -28,7 +28,7 @@ export class SceneCtx {
     container.appendChild(this.renderer.domElement)
 
     this.scene.background = new THREE.Color(0x0b0e14)
-    this.scene.fog = new THREE.FogExp2(0x0b0e14, 0.016) // indice de profondeur bon marché
+    this.scene.fog = new THREE.FogExp2(0x0b0e14, 0.011) // indice de profondeur bon marché
 
     this.camera = new THREE.PerspectiveCamera(
       55,

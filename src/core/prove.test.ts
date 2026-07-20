@@ -75,6 +75,14 @@ describe('checkCandidate (mutex corrigé)', () => {
     expect(r.ctis.length).toBeGreaterThan(0)
   })
 
+  it('avec la brique donnée (A0), les CTI restants passent tous par enter0', () => {
+    const givens = level.lemmas.map((l) => l.expr)
+    expect(givens.length).toBe(1)
+    const r = checkCandidate(space, givens, goal)
+    expect(r.ctis.length).toBeGreaterThan(0)
+    for (const e of r.ctis) expect(space.graph.edges[e].action).toBe('enter0')
+  })
+
   it('A0 et A1 sont inductives seules', () => {
     expect(checkCandidate(space, [], A0).ok).toBe(true)
     expect(checkCandidate(space, [], A1).ok).toBe(true)

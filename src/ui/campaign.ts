@@ -5,19 +5,22 @@ export interface Progress {
   unlocked: number
   /** Meilleur score par id de niveau (coups ou tokens — moins = mieux). */
   scores: Record<string, number>
+  /** Visites guidées déjà terminées, par id de niveau. */
+  tours: Record<string, boolean>
 }
 
 export function loadProgress(): Progress {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw !== null) {
-      const p = JSON.parse(raw) as Progress
-      if (typeof p.unlocked === 'number' && typeof p.scores === 'object') return p
+      const p = JSON.parse(raw) as Partial<Progress>
+      if (typeof p.unlocked === 'number' && typeof p.scores === 'object')
+        return { unlocked: p.unlocked, scores: p.scores ?? {}, tours: p.tours ?? {} }
     }
   } catch {
     // stockage indisponible ou corrompu → progression vierge
   }
-  return { unlocked: 0, scores: {} }
+  return { unlocked: 0, scores: {}, tours: {} }
 }
 
 export function saveProgress(p: Progress): void {

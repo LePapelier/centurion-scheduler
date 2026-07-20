@@ -26,7 +26,7 @@ import type { Assignment, CompiledLevel, Expr, Value } from './ast'
 export type TokKind =
   | 'ident' | 'num' | 'str'
   | 'lparen' | 'rparen' | 'lbrace' | 'rbrace' | 'comma'
-  | 'and' | 'or' | 'not' | 'arrow' | 'defeq' | 'assign' | 'in'
+  | 'and' | 'or' | 'not' | 'implies' | 'arrow' | 'defeq' | 'assign' | 'in'
   | 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge' | 'plus' | 'minus'
 
 export interface Tok {
@@ -38,9 +38,9 @@ export interface Tok {
 const SYMBOLS: readonly (readonly [string, TokKind])[] = [
   // Les plus longs d'abord.
   ['\\in', 'in'], ['/\\', 'and'], ['\\/', 'or'], ['/=', 'ne'],
-  [':=', 'assign'], ['->', 'arrow'], ['==', 'defeq'], ['<=', 'le'], ['>=', 'ge'],
-  ['&&', 'and'], ['||', 'or'],
-  ['∧', 'and'], ['∨', 'or'], ['¬', 'not'], ['→', 'arrow'], ['≜', 'defeq'],
+  [':=', 'assign'], ['=>', 'implies'], ['->', 'arrow'], ['==', 'defeq'],
+  ['<=', 'le'], ['>=', 'ge'], ['&&', 'and'], ['||', 'or'],
+  ['∧', 'and'], ['∨', 'or'], ['¬', 'not'], ['⇒', 'implies'], ['→', 'arrow'], ['≜', 'defeq'],
   ['∈', 'in'], ['≠', 'ne'], ['≤', 'le'], ['≥', 'ge'],
   ['~', 'not'], ['!', 'not'], ['#', 'ne'], ['=', 'eq'], ['<', 'lt'], ['>', 'gt'],
   ['+', 'plus'], ['-', 'minus'], ['(', 'lparen'], [')', 'rparen'],
@@ -115,9 +115,15 @@ class P {
   /** Position source du prochain token (pour découper la ligne). */
   nextPos(): number { return this.peek()?.pos ?? -1 }
 
+  // implies ← or (⇒ implies)?   (associatif à droite, précédence minimale)
   // or ← and (∨ and)*        and ← not (∧ not)*        not ← ¬ not | cmp
   // cmp ← add ((=|≠|<|≤|>|≥) add)?        add ← unary ((+|-) unary)*
-  expr(): Expr { return this.or() }
+  expr(): Expr {
+    const e = this.or()
+    if (this.tryEat('implies'))
+      return { kind: 'bin', op: 'implies', left: e, right: this.expr(), line: this.line }
+    return e
+  }
 
   private or(): Expr {
     let e = this.and()
@@ -241,6 +247,7 @@ export function evalExpr(e: Expr, s: State): Value {
     case 'bin': {
       if (e.op === 'and') return bool(evalExpr(e.left, s)) && bool(evalExpr(e.right, s))
       if (e.op === 'or') return bool(evalExpr(e.left, s)) || bool(evalExpr(e.right, s))
+      if (e.op === 'implies') return !bool(evalExpr(e.left, s)) || bool(evalExpr(e.right, s))
       const l = evalExpr(e.left, s)
       const r = evalExpr(e.right, s)
       switch (e.op) {
@@ -282,10 +289,8 @@ export function compileLevel(src: string): CompiledLevel {
   let invariantSrc = ''
   let colorExpr: Expr | null = null
   let labelVars: string[] = []
-  let mode: 'trace' | 'match' | 'repair' = 'trace'
-  let target: Expr | undefined
-  const requires: { src: string; expr: Expr }[] = []
-  const repairables: string[] = []
+  let mode: 'trace' | 'prove' = 'trace'
+  const lemmas: { src: string; expr: Expr }[] = []
   const tutorial: string[] = []
   let goal = ''
   let inVariables = false
@@ -299,7 +304,7 @@ export function compileLevel(src: string): CompiledLevel {
     const kw = line.split(/\s+/, 1)[0]
     const rest = line.slice(kw.length).trim()
     const KEYWORDS = ['LEVEL', 'NAME', 'DESC', 'VARIABLES', 'ACTION', 'INVARIANT', 'COLOR', 'LABEL',
-      'MODE', 'TARGET', 'REQUIRE', 'REPAIR', 'TUTORIAL', 'GOAL']
+      'MODE', 'LEMMA', 'TUTORIAL', 'GOAL']
     if (KEYWORDS.includes(kw)) inVariables = kw === 'VARIABLES'
 
     switch (kw) {
@@ -341,26 +346,17 @@ export function compileLevel(src: string): CompiledLevel {
         labelVars = rest.split(',').map((v) => v.trim()).filter(Boolean)
         break
       case 'MODE':
-        if (rest !== 'trace' && rest !== 'match' && rest !== 'repair')
-          throw new Error(`ligne ${lineNo} : MODE trace|match|repair attendu`)
+        if (rest !== 'trace' && rest !== 'prove')
+          throw new Error(`ligne ${lineNo} : MODE trace|prove attendu`)
         mode = rest
         break
-      case 'TARGET': {
-        const p = new P(tokenize(rest, lineNo), lineNo)
-        target = p.expr()
-        if (!p.atEnd()) throw new Error(`ligne ${lineNo} : « ${p.peek()!.text} » inattendu`)
-        break
-      }
-      case 'REQUIRE': {
+      case 'LEMMA': {
         const p = new P(tokenize(rest, lineNo), lineNo)
         const expr = p.expr()
         if (!p.atEnd()) throw new Error(`ligne ${lineNo} : « ${p.peek()!.text} » inattendu`)
-        requires.push({ src: rest, expr })
+        lemmas.push({ src: rest, expr })
         break
       }
-      case 'REPAIR':
-        repairables.push(rest)
-        break
       case 'TUTORIAL':
         tutorial.push(rest)
         break
@@ -395,15 +391,13 @@ export function compileLevel(src: string): CompiledLevel {
 
   if (id === '') throw new Error('directive LEVEL manquante')
   if (actions.length === 0) throw new Error('aucune ACTION déclarée')
-  if (mode === 'match' && target === undefined) throw new Error('MODE match : directive TARGET manquante')
-  if (mode !== 'match' && invariant === null) throw new Error('directive INVARIANT manquante')
-  if (mode === 'repair') {
-    if (repairables.length === 0) throw new Error('MODE repair : directive REPAIR manquante')
-    if (requires.length === 0) throw new Error('MODE repair : directive REQUIRE manquante (anti-trivialité)')
-    for (const r of repairables)
-      if (!actions.some((a) => a.name === r))
-        throw new Error(`REPAIR : action inconnue « ${r} »`)
-  }
+  if (invariant === null) throw new Error('directive INVARIANT manquante')
+  if (mode === 'prove')
+    // L'induction quantifie sur l'espace COMPLET : chaque variable doit
+    // avoir un domaine déclaré pour qu'on puisse l'énumérer.
+    for (const v of Object.keys(init))
+      if (!domains.has(v))
+        throw new Error(`MODE prove : la variable « ${v} » doit déclarer un domaine ∈ {…}`)
   for (const a of actions)
     for (const asg of a.assigns)
       if (init[asg.name] === undefined)
@@ -447,9 +441,7 @@ export function compileLevel(src: string): CompiledLevel {
     labelVars: labelVars.length > 0 ? labelVars : Object.keys(init),
     colorValue: colorExpr ? (s) => num(evalExpr(colorExpr, s), 0) : undefined,
     mode,
-    target,
-    requires,
-    repairables,
+    lemmas,
     tutorial,
     goal,
     domains: domains as ReadonlyMap<string, readonly (string | number)[]>,

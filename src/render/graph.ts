@@ -10,19 +10,21 @@ export interface Styles {
   readonly enabledEdges: ReadonlySet<number>
   /** Nœud à faire ressortir (aperçu de la saisie), ou -1. */
   readonly highlight: number
-  /** Couleurs imposées par le mode de jeu (match : vert/rouge/blanc). */
+  /** Couleurs imposées par le mode de jeu. */
   readonly overrides?: ReadonlyMap<number, THREE.Color>
-  /** Nœuds éteints (repair : devenus inatteignables). */
+  /** Nœuds éteints (prove : états fantômes, jamais atteignables). */
   readonly dimmed?: ReadonlySet<number>
-  /** Arêtes tuées par les renforts (repair) — estompées rouge sombre. */
-  readonly killedEdges?: ReadonlySet<number>
+  /** États satisfaisant la formule candidate (la « région », éclaircie). */
+  readonly region?: ReadonlySet<number>
+  /** Contre-exemples à l'induction : transitions qui s'échappent de la région. */
+  readonly ctiEdges?: ReadonlySet<number>
 }
 
 const EDGE = {
   base: new THREE.Color(0x252c3d),
   enabled: new THREE.Color(0x8a5a20),
   trace: new THREE.Color(0xd9a441),
-  killed: new THREE.Color(0x4a1a22),
+  cti: new THREE.Color(0xff3b52),
 }
 const BG = new THREE.Color(0x0b0e14)
 const WHITE = new THREE.Color(0xffffff)
@@ -208,7 +210,9 @@ export class GraphView {
       this.tmpColor.copy(styles.overrides?.get(i) ?? this.nodeColors[i])
       if (styles.frontier.has(i)) this.tmpColor.lerp(FRONTIER_TINT, 0.45)
       if (i === styles.highlight) this.tmpColor.lerp(WHITE, 0.45)
-      if (styles.dimmed?.has(i)) this.tmpColor.lerp(BG, 0.75)
+      if (styles.dimmed?.has(i)) this.tmpColor.lerp(BG, 0.62)
+      // La région reste lisible même sur un état fantôme (appliquée après).
+      if (styles.region?.has(i)) this.tmpColor.lerp(WHITE, 0.38)
       this.nodesMesh.setColorAt(i, this.tmpColor)
       const label = this.labels[i]
       if (label !== null)
@@ -218,8 +222,8 @@ export class GraphView {
 
     const edgeColors = this.edgeGeom.getAttribute('color') as THREE.BufferAttribute
     for (let e = 0; e < this.graph.edges.length; e++) {
-      const c = styles.killedEdges?.has(e)
-        ? EDGE.killed
+      const c = styles.ctiEdges?.has(e)
+        ? EDGE.cti
         : styles.traceEdges.has(e)
           ? EDGE.trace
           : styles.enabledEdges.has(e)

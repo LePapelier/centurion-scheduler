@@ -1,18 +1,20 @@
 import type { Completion } from '@codemirror/autocomplete'
 import * as THREE from 'three'
 import { explore, type Graph } from './core/explore'
+import { buildFullSpace, type FullSpace } from './core/fullspace'
 import { currentNode, newGame, play, undo, type Game } from './core/game'
-import { matchStates, sameSet } from './core/match'
-import { checkRepair } from './core/repair'
-import type { CompiledLevel } from './dsl/ast'
+import { checkCandidate, impliesGoal, usedBricks } from './core/prove'
+import type { CompiledLevel, Expr } from './dsl/ast'
 import { countTokens, parseExpr } from './dsl/parse'
 import { layout } from './layout/force'
 import { levels } from './levels'
 import { GraphView } from './render/graph'
 import { SceneCtx } from './render/scene'
-import { loadProgress, recordScore, unlock } from './ui/campaign'
+import { loadProgress, recordScore, saveProgress, unlock } from './ui/campaign'
 import { FormulaEditor, OPERATOR_COMPLETIONS } from './ui/editor'
-import { Hud } from './ui/hud'
+import { Hud, type Brick } from './ui/hud'
+import { runTour } from './ui/tour'
+import { tours } from './ui/tours'
 
 const app = document.getElementById('app')!
 const progress = loadProgress()
@@ -20,7 +22,6 @@ const levelNames = levels.map((l) => l.name)
 
 // ——— Helpers communs ———
 
-/** Couleur sémantique : gradient bleu → ambre → rouge sur COLOR, rouge si violant. */
 function semanticColors(level: CompiledLevel, graph: Graph): THREE.Color[] {
   const base = new THREE.Color(0x4a78b0)
   const mid = new THREE.Color(0xe0913c)
@@ -35,7 +36,10 @@ function semanticColors(level: CompiledLevel, graph: Graph): THREE.Color[] {
   })
 }
 
-/** Complétions variables + valeurs de domaine + opérateurs. */
+function nodeLabels(level: CompiledLevel, graph: Graph): string[] {
+  return graph.nodes.map((n) => level.labelVars.map((v) => String(n.state[v])).join('·'))
+}
+
 function formulaCompletions(level: CompiledLevel): Completion[] {
   const out: Completion[] = Object.keys(level.init).map((v) => ({ label: v, type: 'variable' }))
   const seen = new Set<string>()
@@ -51,13 +55,6 @@ function formulaCompletions(level: CompiledLevel): Completion[] {
 }
 
 const EMPTY = new Set<number>()
-const noStyles = {
-  current: null,
-  frontier: EMPTY,
-  traceEdges: EMPTY,
-  enabledEdges: EMPTY,
-  highlight: -1,
-}
 
 // ——— Chargement d'un niveau ———
 
@@ -71,25 +68,18 @@ function loadLevel(index: number): void {
 
 function startLevel(index: number): () => void {
   const level = levels[index]
-  const graph = explore(level)
-  const positions = layout(
-    graph.nodes.length,
-    graph.edges.map((e) => [e.from, e.to] as const),
-  )
-  const ctx = new SceneCtx(app)
-  const view = new GraphView(
-    ctx,
-    graph,
-    positions,
-    semanticColors(level, graph),
-    graph.nodes.map((n) => level.labelVars.map((v) => String(n.state[v])).join('·')),
-  )
   const hasNext = index + 1 < levels.length
+
+  // Visite guidée : la victoire est différée tant que le tour est actif.
+  let tourActive = false
+  let pendingWin: (() => void) | null = null
 
   const win = (score: number, title: string, body: string): void => {
     recordScore(progress, level.id, score)
     unlock(progress, Math.min(index + 1, levels.length - 1))
-    hud.showVictory(title, body, hasNext)
+    const show = (): void => hud.showVictory(title, body, hasNext)
+    if (tourActive) pendingWin = show
+    else show()
   }
 
   const hud = new Hud(app, level, levelNames, index, progress.unlocked, {
@@ -102,12 +92,30 @@ function startLevel(index: number): () => void {
     onNext: () => loadLevel(index + 1),
   })
 
+  const ctx = new SceneCtx(app)
+  let lastCameraEvent = 0
+  ctx.controls.addEventListener('change', () => {
+    const now = performance.now()
+    if (now - lastCameraEvent > 300) {
+      lastCameraEvent = now
+      document.dispatchEvent(new CustomEvent('ds:camera-moved'))
+    }
+  })
+
   const modeHooks =
-    level.mode === 'trace'
-      ? setupTrace(level, graph, ctx, view, hud, win)
-      : level.mode === 'match'
-        ? setupMatch(level, graph, ctx, view, hud, win)
-        : setupRepair(level, graph, ctx, view, hud, win)
+    level.mode === 'trace' ? setupTrace(level, ctx, hud, win) : setupProve(level, ctx, hud, win)
+
+  const tour = tours[level.id]
+  if (tour !== undefined && progress.tours[level.id] !== true) {
+    tourActive = true
+    runTour(tour, () => {
+      tourActive = false
+      progress.tours[level.id] = true
+      saveProgress(progress)
+      pendingWin?.()
+      pendingWin = null
+    })
+  }
 
   return () => ctx.dispose()
 }
@@ -121,14 +129,14 @@ type Win = (score: number, title: string, body: string) => void
 
 // ——— MODE trace : l'adversaire au clavier ———
 
-function setupTrace(
-  level: CompiledLevel,
-  graph: Graph,
-  ctx: SceneCtx,
-  view: GraphView,
-  hud: Hud,
-  win: Win,
-): ModeHooks {
+function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): ModeHooks {
+  const graph = explore(level)
+  const positions = layout(
+    graph.nodes.length,
+    graph.edges.map((e) => [e.from, e.to] as const),
+  )
+  const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), nodeLabels(level, graph))
+
   let game: Game = newGame(level.id)
   let prevState: (typeof level)['init'] | null = null
   let locked = false
@@ -141,7 +149,6 @@ function setupTrace(
     return map
   }
 
-  /** Nom exact, ou préfixe non ambigu, d'une action activée. */
   const resolve = (text: string): string | null => {
     if (text === '') return null
     const names = [...enabledMoves().keys()]
@@ -211,13 +218,7 @@ function setupTrace(
       if (locked) return
       const name = resolve(text)
       const e = name === null ? undefined : enabledMoves().get(name)
-      view.setStyles({
-        current: currentNode(game, graph),
-        frontier: new Set([...enabledMoves().values()].map((x) => graph.edges[x].to)),
-        traceEdges: new Set(game.moves),
-        enabledEdges: new Set(enabledMoves().values()),
-        highlight: e === undefined ? -1 : graph.edges[e].to,
-      })
+      refresh(e === undefined ? -1 : graph.edges[e].to)
     },
     onSubmit: (text) => {
       if (locked) return
@@ -228,6 +229,7 @@ function setupTrace(
       game = play(game, graph, e)
       editor.setText('')
       refresh()
+      document.dispatchEvent(new CustomEvent('ds:action-played'))
     },
     lint: (text) =>
       resolve(text) !== null ? null : `« ${text} » : pas une action activée (Ctrl-Espace pour la liste)`,
@@ -256,80 +258,136 @@ function setupTrace(
   }
 }
 
-// ——— MODE match : caractériser un ensemble d'états ———
+// ——— MODE prove : construire le mur de briques ———
 
-const GOOD = new THREE.Color(0x3fae6a) // cible ∩ formule
-const MISS = new THREE.Color(0xff3b52) // cible manquée
-const EXTRA = new THREE.Color(0xf2f6ff) // sélectionné hors cible
+interface ProofBrick extends Brick {
+  readonly expr: Expr
+}
 
-function setupMatch(
-  level: CompiledLevel,
-  graph: Graph,
-  ctx: SceneCtx,
-  view: GraphView,
-  hud: Hud,
-  win: Win,
-): ModeHooks {
-  const target = matchStates(graph, level.target!)
-  let locked = false
+function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): ModeHooks {
+  const space: FullSpace = buildFullSpace(level)
+  const graph = space.graph
+  const positions = layout(
+    graph.nodes.length,
+    graph.edges.map((e) => [e.from, e.to] as const),
+  )
+  const labels = nodeLabels(level, graph)
+  const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), labels)
   view.revealAll()
   ctx.controls.target.set(0, 0, 0)
 
-  const preview = (matched: ReadonlySet<number>): void => {
-    const overrides = new Map<number, THREE.Color>()
-    for (const i of target) overrides.set(i, matched.has(i) ? GOOD : MISS)
-    for (const i of matched) if (!target.has(i)) overrides.set(i, EXTRA)
-    view.setStyles({ ...noStyles, overrides })
+  const goal = parseExpr(level.invariantSrc)
+  const faint = new Set<number>()
+  for (let i = 0; i < graph.nodes.length; i++) if (!space.reachable.has(i)) faint.add(i)
+
+  let bricks: ProofBrick[] = level.lemmas.map((l) => ({
+    src: l.src,
+    expr: l.expr,
+    deps: [],
+    given: true,
+  }))
+  let locked = false
+
+  const baseStyles = {
+    current: space.init,
+    frontier: EMPTY,
+    traceEdges: EMPTY,
+    enabledEdges: EMPTY,
+    highlight: -1,
+    dimmed: faint,
   }
 
-  const status = (matched: ReadonlySet<number> | null, text: string): void => {
-    if (matched === null) {
-      hud.setStatus(`cible : <b>${target.size}</b> états — ${text}`)
-      return
-    }
-    let good = 0
-    for (const i of matched) if (target.has(i)) good++
-    const extra = matched.size - good
-    hud.setStatus(
-      `<b>${good}/${target.size}</b> corrects` +
-        (extra > 0 ? `, <b>${extra}</b> en trop` : '') +
-        (text !== '' ? ` — ${text}` : ''),
+  const refreshGoal = (): boolean => {
+    const proved = impliesGoal(space, bricks.map((b) => b.expr), goal)
+    hud.setGoalStatus(
+      `objectif : vos briques impliquent l'INVARIANT — ${proved ? '<b>OUI ✓</b>' : 'pas encore'}`,
+      proved,
     )
+    return proved
+  }
+
+  const idle = (): void => {
+    view.setStyles(baseStyles)
+    hud.setFailingActions(EMPTY as unknown as Set<string>)
+    hud.setStatus(
+      `espace complet : <b>${graph.nodes.length}</b> états, dont <b>${space.reachable.size}</b> atteignables — les fantômes sont assombris`,
+    )
+  }
+
+  /** Aperçu live d'une candidate ; retourne le rapport si elle est parsable. */
+  const preview = (text: string): ReturnType<typeof checkCandidate> | null => {
+    if (text === '') {
+      idle()
+      return null
+    }
+    let report
+    try {
+      report = checkCandidate(space, bricks.map((b) => b.expr), parseExpr(text))
+    } catch {
+      return null // le lint souligne déjà
+    }
+    view.setStyles({
+      ...baseStyles,
+      region: report.region,
+      ctiEdges: new Set(report.ctis),
+      highlight: report.initOk ? -1 : space.init,
+    })
+    const failing = new Set(report.ctis.map((e) => graph.edges[e].action))
+    hud.setFailingActions(failing)
+    if (!report.initOk) {
+      hud.setStatus(`l'état initial est <b>hors</b> de la région — une brique doit le contenir`)
+    } else if (report.ctis.length > 0) {
+      const e = graph.edges[report.ctis[0]]
+      hud.setStatus(
+        `<b>${report.ctis.length}</b> CTI — ex. <b>${e.action}</b> : ${labels[e.from]} → ${labels[e.to]}`,
+      )
+      document.dispatchEvent(new CustomEvent('ds:cti-shown'))
+    } else {
+      hud.setStatus(`inductive ✓ — Entrée pour en faire une brique`)
+    }
+    return report
   }
 
   const editor = new FormulaEditor({
     parent: hud.editorMount,
-    placeholder: 'formule d’état — ex. n = 3 (Ctrl-Espace : complétion)',
+    placeholder: 'formule candidate — sa région s’éclaire, Entrée pour prouver',
     completions: () => formulaCompletions(level),
     onChange: (text) => {
-      if (locked) return
-      if (text === '') {
-        preview(EMPTY)
-        status(null, 'tapez une formule')
-        return
-      }
-      let matched: Set<number>
-      try {
-        matched = matchStates(graph, parseExpr(text))
-      } catch {
-        return // le lint souligne déjà ; on garde le dernier aperçu
-      }
-      preview(matched)
-      const tokens = countTokens(text)
-      status(matched, `${tokens} tokens`)
-      if (sameSet(matched, target)) {
+      if (!locked) preview(text)
+    },
+    onSubmit: (text) => {
+      if (locked || text === '') return
+      const report = preview(text)
+      if (report === null || !report.ok) return
+      const expr = parseExpr(text)
+      const used = usedBricks(space, bricks.map((b) => b.expr), expr)
+      bricks = [...bricks, {
+        src: text,
+        expr,
+        deps: bricks.filter((_, i) => used[i]).map((b) => b.src),
+        given: false,
+      }]
+      hud.renderBricks(bricks)
+      editor.setText('')
+      idle()
+      document.dispatchEvent(new CustomEvent('ds:brick-proved'))
+      if (refreshGoal()) {
         locked = true
+        const score = bricks.filter((b) => !b.given).reduce((n, b) => n + countTokens(b.src), 0)
+        const wall = bricks
+          .filter((b) => !b.given)
+          .map((b) => `□ ${b.src}`)
+          .join('<br>')
         win(
-          tokens,
-          'Caractérisation exacte',
-          `<p class="formula">${text}</p><p><b>${tokens}</b> tokens</p>`,
+          score,
+          'Invariant prouvé',
+          `<p class="formula">${wall}</p><p><b>${bricks.filter((b) => !b.given).length}</b> briques, <b>${score}</b> tokens</p>`,
         )
       }
     },
-    onSubmit: () => undefined, // tout est live, Entrée n'a rien à faire
     lint: (text) => {
       try {
-        matchStates(graph, parseExpr(text))
+        checkCandidate(space, [], parseExpr(text))
         return null
       } catch (err) {
         return (err as Error).message
@@ -339,116 +397,21 @@ function setupMatch(
 
   hud.updateVars(level.init, null)
   hud.setEnabledActions(EMPTY as unknown as Set<string>)
-  preview(EMPTY)
-  status(null, 'tapez une formule')
+  hud.renderBricks(bricks)
+  hud.setMoves('')
+  refreshGoal()
+  idle()
   editor.focus()
 
   return {
     onReset: () => {
       locked = false
+      bricks = bricks.filter((b) => b.given)
+      hud.renderBricks(bricks)
       editor.setText('')
-      preview(EMPTY)
-      status(null, 'tapez une formule')
+      refreshGoal()
+      idle()
       editor.focus()
-    },
-  }
-}
-
-// ——— MODE repair : renforcer les gardes ———
-
-function setupRepair(
-  level: CompiledLevel,
-  graph: Graph,
-  ctx: SceneCtx,
-  view: GraphView,
-  hud: Hud,
-  win: Win,
-): ModeHooks {
-  let locked = false
-  view.revealAll()
-  ctx.controls.target.set(0, 0, 0)
-  const editors = new Map<string, FormulaEditor>()
-
-  const recompute = (): void => {
-    if (locked) return
-    const extras = new Map<string, ReturnType<typeof parseExpr>>()
-    for (const [action, ed] of editors) {
-      const text = ed.getText()
-      if (text === '') continue
-      try {
-        extras.set(action, parseExpr(text))
-      } catch {
-        return // slot invalide : le lint souligne, on fige l'aperçu
-      }
-    }
-    let result
-    try {
-      result = checkRepair(graph, extras, level.requires)
-    } catch {
-      return
-    }
-    view.setStyles({
-      ...noStyles,
-      dimmed: result.unreachable,
-      killedEdges: result.killedEdges,
-    })
-    hud.setRequires(result.requiresOk)
-    const reqOk = result.requiresOk.filter(Boolean).length
-    const tokens = [...editors.values()].reduce((n, ed) => n + countTokens(ed.getText()), 0)
-    hud.setStatus(
-      `${result.safe ? 'plus aucune violation atteignable ✓' : 'violation encore atteignable'}` +
-        ` — REQUIRE : <b>${reqOk}/${level.requires.length}</b>` +
-        ` — transitions tuées : ${result.killedEdges.size} — ${tokens} tokens`,
-    )
-    if (result.safe && reqOk === level.requires.length && extras.size > 0) {
-      locked = true
-      const parts = [...editors.entries()]
-        .filter(([, ed]) => ed.getText() !== '')
-        .map(([a, ed]) => `${a} : ∧ ${ed.getText()}`)
-      win(
-        tokens,
-        'Système réparé',
-        `<p class="formula">${parts.join('<br>')}</p><p><b>${tokens}</b> tokens ajoutés</p>`,
-      )
-    }
-  }
-
-  for (const action of level.repairables) {
-    const mount = hud.repairMounts.get(action)!
-    editors.set(
-      action,
-      new FormulaEditor({
-        parent: mount,
-        placeholder: 'renfort…',
-        completions: () => formulaCompletions(level),
-        onChange: () => recompute(),
-        onSubmit: () => recompute(),
-        lint: (text) => {
-          try {
-            parseExpr(text)
-            // Vérifie l'évaluabilité sur un état (variables connues).
-            checkRepair(graph, new Map([[action, parseExpr(text)]]), [])
-            return null
-          } catch (err) {
-            return (err as Error).message
-          }
-        },
-      }),
-    )
-  }
-
-  hud.updateVars(level.init, null)
-  hud.setEnabledActions(new Set(level.repairables))
-  view.setStyles(noStyles)
-  hud.setStatus('renforcez les gardes surlignées — l’aperçu est immédiat')
-  recompute()
-
-  return {
-    onReset: () => {
-      locked = false
-      for (const ed of editors.values()) ed.setText('')
-      view.setStyles(noStyles)
-      recompute()
     },
   }
 }

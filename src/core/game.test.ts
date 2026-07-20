@@ -27,8 +27,11 @@ describe('game (mutex)', () => {
   })
 
   it('l’ordonnancement honnête ne viole pas', () => {
-    const game = playNames(['check0', 'enter0', 'exit0', 'check1', 'enter1'])
+    const game = playNames(['check0', 'enter0'])
     expect(isVictory(game, graph)).toBe(false)
+    // le drapeau levé bloque l'autre processus
+    const at = currentNode(game, graph)
+    expect(graph.successors[at].map((e) => graph.edges[e].action)).not.toContain('check1')
   })
 
   it('undo remonte d’un coup', () => {

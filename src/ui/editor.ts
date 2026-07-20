@@ -20,7 +20,7 @@ export interface EditorOpts {
 /** Saisie ASCII réécrite en symboles du DSL à la volée. */
 const DIGRAPHS: Record<string, string> = {
   '/\\': '∧', '&&': '∧', '\\/': '∨', '||': '∨',
-  '->': '→', '/=': '≠', '!=': '≠', '<=': '≤', '>=': '≥',
+  '=>': '⇒', '->': '→', '/=': '≠', '!=': '≠', '<=': '≤', '>=': '≥',
 }
 
 /** Remplacements ASCII → symboles dans `doc` (balayage gauche-droite, digraphes d'abord). */
@@ -49,8 +49,8 @@ const dslLanguage = StreamLanguage.define({
     if (stream.match(/^"[^"]*"?/)) return 'string'
     if (stream.match(/^[0-9]+/)) return 'number'
     if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) return 'variableName'
-    if (stream.match(/^(\/\\|\\\/|\/=|:=|->|==|<=|>=|&&|\|\|)/)) return 'operator'
-    if (stream.match(/^[∧∨¬→≜∈≠≤≥~!#=<>+-]/)) return 'operator'
+    if (stream.match(/^(\/\\|\\\/|\/=|:=|=>|->|==|<=|>=|&&|\|\|)/)) return 'operator'
+    if (stream.match(/^[∧∨¬⇒→≜∈≠≤≥~!#=<>+-]/)) return 'operator'
     if (stream.match(/^[(){},]/)) return 'punctuation'
     stream.next()
     return 'invalid'
@@ -183,6 +183,7 @@ export const OPERATOR_COMPLETIONS: Completion[] = [
   { label: '∧', detail: '/\\  et', apply: '∧ ', type: 'keyword' },
   { label: '∨', detail: '\\/  ou', apply: '∨ ', type: 'keyword' },
   { label: '¬', detail: '~  non', apply: '¬', type: 'keyword' },
+  { label: '⇒', detail: '=>  implique', apply: '⇒ ', type: 'keyword' },
   { label: '≠', detail: '/=  différent', apply: '≠ ', type: 'keyword' },
   { label: '≤', detail: '<=', apply: '≤ ', type: 'keyword' },
   { label: '≥', detail: '>=', apply: '≥ ', type: 'keyword' },

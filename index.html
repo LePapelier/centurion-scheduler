@@ -46,8 +46,6 @@
 
       .editor-mount { margin-top: 10px; }
       .editor-mount:empty { display: none; }
-      .slot-editor { display: inline-block; vertical-align: middle; margin-left: 2px; }
-      .slot-editor .cm-editor { display: inline-block; min-width: 190px; }
       .formula { color: #d9a441; }
 
       .spec { border-top: 1px solid #232c3f; padding-top: 10px; }
@@ -66,14 +64,48 @@
       .spec .action.enabled .aname { color: #ffb04d; font-weight: 600; }
       .spec .action.enabled .guard { color: #8fd0a0; }
       .spec .action.enabled:hover, .spec .action.hovered { background: #1d2740; }
-      .spec .action.repairable { color: #cdd6e4; }
-      .spec .action.repairable .aname { color: #ffb04d; font-weight: 600; }
+      .spec .action.failing { background: rgba(255, 59, 82, 0.1); color: #cdd6e4; }
+      .spec .action.failing .aname { color: #ff3b52; font-weight: 600; }
       .spec .inv { margin-top: 10px; color: #8d99ad; }
       .spec .inv.violated .src { color: #ff3b52; font-weight: 600; }
-      .spec .req { color: #8d99ad; }
-      .spec .req.ok .src { color: #3fae6a; }
-      .spec .req .kw { color: #55607a; }
-      .spec .req.ok .kw { color: #3fae6a; }
+
+      .bricks { margin-top: 10px; border-top: 1px solid #232c3f; padding-top: 8px; }
+      .bricks .kw { color: #7a88ff; font-weight: 600; }
+      .brick { margin: 4px 0 4px 8px; color: #cdd6e4; }
+      .brick .box { color: #3fae6a; font-weight: 700; }
+      .brick .src { color: #d9a441; }
+      .brick .tag {
+        margin-left: 8px; padding: 0 6px; border-radius: 4px;
+        background: #1d2740; color: #8d99ad; font-size: 11px;
+      }
+      .brick .deps { margin-left: 18px; color: #55607a; font-size: 12px; }
+      .brick .deps .dep { color: #8d99ad; }
+      .goal-status { margin-top: 6px; color: #8d99ad; }
+      .goal-status.proved { color: #3fae6a; }
+      .goal-status.proved b { color: #3fae6a; }
+
+      .tour-bubble {
+        position: fixed; z-index: 200; width: 340px;
+        background: #141b2c; border: 1px solid #6ec8ff; border-radius: 10px;
+        padding: 12px 14px; color: #cdd6e4;
+        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+        font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+      .tour-bubble code { color: #ffb04d; }
+      .tour-bubble b { color: #f2f6ff; }
+      .tour-controls {
+        display: flex; align-items: center; gap: 10px; margin-top: 10px;
+      }
+      .tour-count { color: #55607a; }
+      .tour-wait { color: #6ec8ff; }
+      .tour-skip {
+        margin-left: auto; background: none; border: none;
+        color: #55607a; text-decoration: underline; padding: 0;
+      }
+      .tour-target {
+        position: relative; z-index: 150; border-radius: 8px;
+        box-shadow: 0 0 0 3px #6ec8ff, 0 0 0 200vmax rgba(5, 7, 11, 0.72);
+      }
 
       .panel .hint { margin-top: 8px; color: #6ec8ff; min-height: 1.5em; }
       .panel .trace { margin-top: 8px; color: #d9a441; word-break: break-word; }

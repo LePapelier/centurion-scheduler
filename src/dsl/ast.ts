@@ -9,7 +9,10 @@ export type Expr =
   | { readonly kind: 'not'; readonly arg: Expr }
   | {
       readonly kind: 'bin'
-      readonly op: 'and' | 'or' | 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge' | 'add' | 'sub'
+      readonly op:
+        | 'and' | 'or' | 'implies'
+        | 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge'
+        | 'add' | 'sub'
       readonly left: Expr
       readonly right: Expr
       readonly line: number
@@ -21,7 +24,7 @@ export interface Assignment {
   readonly line: number
 }
 
-export type LevelMode = 'trace' | 'match' | 'repair'
+export type LevelMode = 'trace' | 'prove'
 
 /** Niveau compilé depuis le DSL : un Level jouable + tout ce qu'il faut afficher. */
 export interface CompiledLevel extends Level {
@@ -37,12 +40,8 @@ export interface CompiledLevel extends Level {
   colorValue?(s: State): number
 
   readonly mode: LevelMode
-  /** MODE match : l'ensemble d'états à caractériser. */
-  readonly target?: Expr
-  /** MODE repair : conditions d'atteignabilité à préserver (anti-trivialité). */
-  readonly requires: readonly { readonly src: string; readonly expr: Expr }[]
-  /** MODE repair : actions dont la garde est renforçable. */
-  readonly repairables: readonly string[]
+  /** MODE prove : briques de départ (lemmes donnés, supposés prouvés). */
+  readonly lemmas: readonly { readonly src: string; readonly expr: Expr }[]
   /** Paragraphes du tuto (directive TUTORIAL, répétable). */
   readonly tutorial: readonly string[]
   /** Consigne courte (directive GOAL). */

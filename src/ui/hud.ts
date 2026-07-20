@@ -8,10 +8,17 @@ export interface HudCallbacks {
   onNext(): void
 }
 
+export interface Brick {
+  readonly src: string
+  /** Formules des briques dont la preuve dépend (vide pour une brique donnée). */
+  readonly deps: readonly string[]
+  readonly given: boolean
+}
+
 /**
  * HUD spec-centrique, reconstruit à chaque chargement de niveau.
- * La spec est affichée ; le jeu se joue au clavier dans le ou les
- * éditeurs (montés par main.ts dans les emplacements fournis).
+ * Mode trace : console d'ordonnancement. Mode prove : mur de briques,
+ * candidate en cours, statut de l'objectif.
  */
 export class Hud {
   private readonly varEls = new Map<string, HTMLElement>()
@@ -21,14 +28,14 @@ export class Hud {
   private readonly statusEl: HTMLElement
   private readonly traceEl: HTMLElement
   private readonly hintEl: HTMLElement
+  private readonly bricksEl: HTMLElement | null
+  private readonly goalEl: HTMLElement | null
   private readonly victoryEl: HTMLElement
   private readonly victoryBody: HTMLElement
   private readonly nextBtn: HTMLButtonElement
 
-  /** Emplacement de l'éditeur principal (modes trace et match). */
+  /** Emplacement de l'éditeur (console trace, ou candidate prove). */
   readonly editorMount: HTMLElement
-  /** Emplacements des slots de renfort, par action (mode repair). */
-  readonly repairMounts = new Map<string, HTMLElement>()
 
   constructor(
     root: HTMLElement,
@@ -50,9 +57,14 @@ export class Hud {
         <div class="kw">VARIABLES</div>
         <div class="vars"></div>
         <div class="actions"></div>
-        ${level.invariantSrc !== '' ? `<div class="inv"><span class="kw">INVARIANT</span> <span class="src">${level.invariantSrc}</span></div>` : ''}
-        ${level.requires.map((r) => `<div class="req"><span class="kw">REQUIRE</span> <span class="src">${r.src}</span></div>`).join('')}
+        <div class="inv"><span class="kw">INVARIANT</span> <span class="src">${level.invariantSrc}</span></div>
       </div>
+      ${
+        level.mode === 'prove'
+          ? `<div class="bricks"><div class="kw">BRIQUES</div><div class="bricks-list"></div></div>
+             <div class="goal-status"></div>`
+          : ''
+      }
       <div class="editor-mount"></div>
       <div class="moves"></div>
       <div class="status"></div>
@@ -64,7 +76,6 @@ export class Hud {
       </div>`
     root.appendChild(panel)
 
-    // Sélecteur de niveaux.
     const levelsEl = panel.querySelector('.levels')!
     levelNames.forEach((name, i) => {
       const b = document.createElement('button')
@@ -85,26 +96,18 @@ export class Hud {
       this.varEls.set(v, el)
     }
 
-    // Actions ; en mode repair, les actions réparables reçoivent un slot « ∧ [___] ».
     const actionsEl = panel.querySelector('.actions')!
     for (const a of level.actionsSrc) {
       const el = document.createElement('div')
       el.className = 'action'
-      el.innerHTML = `<span class="kw">ACTION</span> <span class="aname">${a.name}</span> ≜ <span class="guard">${a.guardSrc}</span><span class="slot"></span> <span class="arrow">→</span> <span class="upd">${a.updateSrc}</span>`
+      el.innerHTML = `<span class="kw">ACTION</span> <span class="aname">${a.name}</span> ≜ <span class="guard">${a.guardSrc}</span> <span class="arrow">→</span> <span class="upd">${a.updateSrc}</span>`
       actionsEl.appendChild(el)
       this.actionEls.set(a.name, el)
-      if (level.mode === 'repair' && level.repairables.includes(a.name)) {
-        el.classList.add('repairable')
-        const slot = el.querySelector('.slot') as HTMLElement
-        slot.innerHTML = ' ∧ '
-        const mount = document.createElement('span')
-        mount.className = 'slot-editor'
-        slot.appendChild(mount)
-        this.repairMounts.set(a.name, mount)
-      }
     }
 
     this.invEl = panel.querySelector('.inv')
+    this.bricksEl = panel.querySelector('.bricks-list')
+    this.goalEl = panel.querySelector('.goal-status')
     this.movesEl = panel.querySelector('.moves')!
     this.statusEl = panel.querySelector('.status')!
     this.traceEl = panel.querySelector('.trace')!
@@ -142,15 +145,33 @@ export class Hud {
     for (const [name, el] of this.actionEls) el.classList.toggle('enabled', names.has(name))
   }
 
+  /** Surligne les actions fautives (sources de CTI). */
+  setFailingActions(names: ReadonlySet<string>): void {
+    for (const [name, el] of this.actionEls) el.classList.toggle('failing', names.has(name))
+  }
+
   setInvariantViolated(violated: boolean): void {
     this.invEl?.classList.toggle('violated', violated)
   }
 
-  /** Coche/décoche visuellement chaque ligne REQUIRE (mode repair). */
-  setRequires(ok: readonly boolean[]): void {
-    this.victoryEl.parentElement!.querySelectorAll('.req').forEach((el, i) => {
-      el.classList.toggle('ok', ok[i] === true)
-    })
+  renderBricks(bricks: readonly Brick[]): void {
+    if (this.bricksEl === null) return
+    this.bricksEl.innerHTML = bricks
+      .map(
+        (b) => `
+        <div class="brick${b.given ? ' given' : ''}">
+          <span class="box">□</span> <span class="src">${b.src}</span>
+          ${b.given ? '<span class="tag">donnée</span>' : ''}
+          ${b.deps.length > 0 ? `<div class="deps">└ s'appuie sur : ${b.deps.map((d) => `<span class="dep">${d}</span>`).join(' · ')}</div>` : ''}
+        </div>`,
+      )
+      .join('')
+  }
+
+  setGoalStatus(html: string, proved: boolean): void {
+    if (this.goalEl === null) return
+    this.goalEl.innerHTML = html
+    this.goalEl.classList.toggle('proved', proved)
   }
 
   setMoves(text: string): void {

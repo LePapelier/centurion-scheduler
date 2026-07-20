@@ -9,6 +9,7 @@ import { countTokens, parseExpr } from './dsl/parse'
 import { layout } from './layout/force'
 import { levels } from './levels'
 import { GraphView } from './render/graph'
+import { color } from './render/palette'
 import { SceneCtx } from './render/scene'
 import { loadProgress, recordScore, saveProgress, unlock } from './ui/campaign'
 import { FormulaEditor, OPERATOR_COMPLETIONS } from './ui/editor'
@@ -22,17 +23,17 @@ const levelNames = levels.map((l) => l.name)
 
 // ——— Helpers communs ———
 
+/** Couleur sémantique : gradient bleu → ambré → rose sur COLOR, rose si violant. */
 function semanticColors(level: CompiledLevel, graph: Graph): THREE.Color[] {
-  const base = new THREE.Color(0x4a78b0)
-  const mid = new THREE.Color(0xe0913c)
-  const hot = new THREE.Color(0xff3b52)
   const values = graph.nodes.map((n) => level.colorValue?.(n.state) ?? 0)
   const min = Math.min(...values)
   const span = Math.max(...values) - min || 1
   return graph.nodes.map((n, i) => {
-    if (n.violating) return hot.clone()
+    if (n.violating) return color.violating.clone()
     const t = (values[i] - min) / span
-    return t < 0.5 ? base.clone().lerp(mid, t * 2) : mid.clone().lerp(hot, (t - 0.5) * 2)
+    return t < 0.5
+      ? color.nodeCold.clone().lerp(color.nodeWarm, t * 2)
+      : color.nodeWarm.clone().lerp(color.violating, (t - 0.5) * 2)
   })
 }
 

@@ -57,46 +57,47 @@ const dslLanguage = StreamLanguage.define({
   },
 })
 
+// Palette du portfolio (voir ../render/palette.ts et les variables CSS d'index.html).
 const dslHighlight = HighlightStyle.define([
-  { tag: tags.string, color: '#8fd0a0' },
-  { tag: tags.number, color: '#d9a441' },
-  { tag: tags.variableName, color: '#6ec8ff' },
-  { tag: tags.operator, color: '#a4aeff' },
-  { tag: tags.punctuation, color: '#8d99ad' },
-  { tag: tags.invalid, color: '#ff3b52' },
+  { tag: tags.string, color: '#81C995' },
+  { tag: tags.number, color: '#F7DC6F' },
+  { tag: tags.variableName, color: '#78B8FF' },
+  { tag: tags.operator, color: '#AA96DA' },
+  { tag: tags.punctuation, color: '#B6C2D9' },
+  { tag: tags.invalid, color: '#FF6B9D' },
 ])
 
 const theme = EditorView.theme(
   {
     '&': {
-      backgroundColor: '#0e1420',
-      border: '1px solid #2c3a55',
+      backgroundColor: '#0A1120',
+      border: '1px solid #1E2A44',
       borderRadius: '6px',
       fontSize: '13px',
     },
-    '&.cm-focused': { outline: 'none', borderColor: '#7a88ff' },
+    '&.cm-focused': { outline: 'none', borderColor: '#55E8F6' },
     '.cm-content': {
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
       padding: '6px 9px',
-      caretColor: '#f2f6ff',
+      caretColor: '#F7FAFF',
     },
-    '.cm-cursor': { borderLeftColor: '#f2f6ff' },
-    '.cm-placeholder': { color: '#55607a' },
+    '.cm-cursor': { borderLeftColor: '#F7FAFF' },
+    '.cm-placeholder': { color: '#5D6B85' },
     '.cm-tooltip': {
-      backgroundColor: '#141b2c',
-      border: '1px solid #2c3a55',
-      color: '#cdd6e4',
+      backgroundColor: '#0E1730',
+      border: '1px solid #1E2A44',
+      color: '#C3CDE0',
       fontFamily: 'ui-monospace, Menlo, monospace',
     },
     '.cm-tooltip-autocomplete ul li[aria-selected]': {
-      backgroundColor: '#243049',
-      color: '#f2f6ff',
+      backgroundColor: '#1A2B4A',
+      color: '#F7FAFF',
     },
-    '.cm-completionDetail': { color: '#55607a', fontStyle: 'normal' },
-    '.cm-diagnostic-error': { borderLeft: '3px solid #ff3b52' },
+    '.cm-completionDetail': { color: '#5D6B85', fontStyle: 'normal' },
+    '.cm-diagnostic-error': { borderLeft: '3px solid #FF6B9D' },
     '.cm-lintRange-error': {
       backgroundImage: 'none',
-      textDecoration: 'underline wavy #ff3b52 1px',
+      textDecoration: 'underline wavy #FF6B9D 1px',
     },
   },
   { dark: true },

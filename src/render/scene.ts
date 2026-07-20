@@ -1,5 +1,47 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { hex, particleColors } from './palette'
+
+/** Fond de particules pastel (identité portfolio) : statique, un seul Points. */
+function makeStarfield(count = 420): THREE.Points {
+  const positions = new Float32Array(count * 3)
+  const colors = new Float32Array(count * 3)
+  let seed = 1337
+  const rand = (): number => {
+    seed = (seed * 16807) % 2147483647
+    return seed / 2147483647
+  }
+  for (let i = 0; i < count; i++) {
+    // Coquille sphérique lointaine, hors de la zone de jeu.
+    const r = 45 + rand() * 70
+    const theta = rand() * Math.PI * 2
+    const z = rand() * 2 - 1
+    const s = Math.sqrt(1 - z * z)
+    positions[i * 3] = r * s * Math.cos(theta)
+    positions[i * 3 + 1] = r * z
+    positions[i * 3 + 2] = r * s * Math.sin(theta)
+    const [cr, cg, cb] = particleColors[Math.floor(rand() * particleColors.length)]
+    colors[i * 3] = cr
+    colors[i * 3 + 1] = cg
+    colors[i * 3 + 2] = cb
+  }
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geom.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  const points = new THREE.Points(
+    geom,
+    new THREE.PointsMaterial({
+      size: 0.55,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+      fog: false,
+    }),
+  )
+  points.frustumCulled = false
+  return points
+}
 
 export interface Tween {
   readonly dur: number
@@ -27,8 +69,9 @@ export class SceneCtx {
     this.renderer.setSize(container.clientWidth, container.clientHeight)
     container.appendChild(this.renderer.domElement)
 
-    this.scene.background = new THREE.Color(0x0b0e14)
-    this.scene.fog = new THREE.FogExp2(0x0b0e14, 0.011) // indice de profondeur bon marché
+    this.scene.background = new THREE.Color(hex.background)
+    this.scene.fog = new THREE.FogExp2(hex.fog, 0.009) // indice de profondeur bon marché
+    this.scene.add(makeStarfield())
 
     this.camera = new THREE.PerspectiveCamera(
       55,

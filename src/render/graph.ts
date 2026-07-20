@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { Graph } from '../core/explore'
+import { color, edgeLabelColor, labelColor } from './palette'
 import type { SceneCtx } from './scene'
 
 export interface Styles {
@@ -20,16 +21,14 @@ export interface Styles {
   readonly ctiEdges?: ReadonlySet<number>
 }
 
-const EDGE = {
-  base: new THREE.Color(0x252c3d),
-  enabled: new THREE.Color(0x8a5a20),
-  trace: new THREE.Color(0xd9a441),
-  cti: new THREE.Color(0xff3b52),
-  selected: new THREE.Color(0xffb04d),
-}
-const BG = new THREE.Color(0x0b0e14)
-const WHITE = new THREE.Color(0xffffff)
-const FRONTIER_TINT = new THREE.Color(0xffb04d)
+const NODE_RADIUS = 0.32
+const RING_INNER = 0.58 // rapport rayon intérieur / extérieur (identité portfolio)
+const ARROW_LEN = 0.16
+const EDGE_INSET = 0.4 // marge entre la ligne et le centre d'un nœud
+const UP = new THREE.Vector3(0, 1, 0)
+
+/** Au-delà de ce nombre de nœuds, seuls les états atteignables (et la sélection) gardent leur étiquette. */
+const LABEL_DENSITY_LIMIT = 30
 
 function haloTexture(): THREE.Texture {
   const size = 128
@@ -45,22 +44,26 @@ function haloTexture(): THREE.Texture {
   return new THREE.CanvasTexture(canvas)
 }
 
-function labelSprite(text: string, color = '#cdd6e4', k = 0.011): THREE.Sprite {
-  const font = '28px ui-monospace, Menlo, monospace'
+/** Étiquette texte : blanc sur fond nu avec ombre portée (lisible sans cartouche). */
+function labelSprite(text: string, fill = labelColor, k = 0.0095): THREE.Sprite {
+  const font = '600 30px ui-monospace, Menlo, monospace'
   const measure = document.createElement('canvas').getContext('2d')!
   measure.font = font
-  const w = Math.ceil(measure.measureText(text).width) + 12
-  const h = 38
+  const pad = 10
+  const w = Math.ceil(measure.measureText(text).width) + pad * 2
+  const h = 44
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
   const g = canvas.getContext('2d')!
   g.font = font
-  g.fillStyle = 'rgba(13, 17, 26, 0.65)'
-  g.fillRect(0, 0, w, h)
-  g.fillStyle = color
   g.textBaseline = 'middle'
-  g.fillText(text, 6, h / 2 + 1)
+  g.shadowColor = 'rgba(2, 4, 10, 0.95)'
+  g.shadowBlur = 7
+  g.fillStyle = fill
+  g.fillText(text, pad, h / 2 + 1)
+  g.shadowBlur = 0
+  g.fillText(text, pad, h / 2 + 1)
   const sprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthWrite: false, transparent: true }),
   )
@@ -68,16 +71,12 @@ function labelSprite(text: string, color = '#cdd6e4', k = 0.011): THREE.Sprite {
   return sprite
 }
 
-/** Au-delà de ce nombre de nœuds, seuls les états atteignables (et la sélection) gardent leur étiquette. */
-const LABEL_DENSITY_LIMIT = 60
-
 /**
- * Vue du graphe : une seule InstancedMesh pour les nœuds, un seul
- * LineSegments pour les arêtes, une étiquette-sprite par nœud révélé.
- * La couleur d'un nœud est SÉMANTIQUE (fournie par le niveau) ; le statut
- * de jeu passe par le halo (courant), la pulsation (frontière) et les
- * arêtes (trace or, transitions activées orange). Brouillard de guerre :
- * échelle nulle et arêtes dégénérées pour le non-révélé.
+ * Vue du graphe, identité visuelle du portfolio : anneaux émissifs
+ * billboardés (une InstancedMesh), arêtes gris-bleu fléchées (LineSegments
+ * + cônes instanciés, en retrait des nœuds), étiquettes blanches au-dessus.
+ * Aucune lumière : matériaux basic, tout est réécrit chaque frame — trivial
+ * à ces tailles. Brouillard de guerre : échelle nulle pour le non-révélé.
  */
 export class GraphView {
   private readonly graph: Graph
@@ -91,6 +90,8 @@ export class GraphView {
   private readonly labelTexts: readonly string[]
 
   private readonly nodesMesh: THREE.InstancedMesh
+  private readonly pickMesh: THREE.InstancedMesh // disques invisibles : le pick ignore le trou des anneaux
+  private readonly arrowsMesh: THREE.InstancedMesh
   private readonly edgeGeom: THREE.BufferGeometry
   private readonly edgePos: Float32Array
   private readonly halo: THREE.Sprite
@@ -102,12 +103,14 @@ export class GraphView {
     enabledEdges: new Set(),
     highlight: -1,
   }
+  private selected: number | null = null
+  private readonly edgeLabels = new Map<number, THREE.Sprite>()
   private readonly dummy = new THREE.Object3D()
   private readonly raycaster = new THREE.Raycaster()
   private readonly tmpColor = new THREE.Color()
-  /** Nœud sélectionné (inspection) : surligné, flèches sortantes étiquetées. */
-  private selected: number | null = null
-  private readonly edgeLabels = new Map<number, THREE.Sprite>()
+  private readonly tmpA = new THREE.Vector3()
+  private readonly tmpB = new THREE.Vector3()
+  private readonly tmpDir = new THREE.Vector3()
 
   constructor(
     ctx: SceneCtx,
@@ -128,13 +131,24 @@ export class GraphView {
     this.labels = new Array(n).fill(null)
 
     this.nodesMesh = new THREE.InstancedMesh(
-      new THREE.IcosahedronGeometry(0.32, 2),
-      new THREE.MeshLambertMaterial(),
+      new THREE.RingGeometry(NODE_RADIUS * RING_INNER, NODE_RADIUS, 40),
+      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
       n,
     )
     this.nodesMesh.frustumCulled = false
     for (let i = 0; i < n; i++) this.nodesMesh.setColorAt(i, nodeColors[i])
     ctx.scene.add(this.nodesMesh)
+
+    // Même matrices que les anneaux, mais plein : cliquer le centre marche.
+    this.pickMesh = new THREE.InstancedMesh(
+      new THREE.CircleGeometry(NODE_RADIUS * 1.15, 16),
+      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+      n,
+    )
+    this.pickMesh.instanceMatrix = this.nodesMesh.instanceMatrix
+    this.pickMesh.visible = false
+    this.pickMesh.frustumCulled = false
+    ctx.scene.add(this.pickMesh)
 
     this.edgePos = new Float32Array(graph.edges.length * 6)
     this.edgeGeom = new THREE.BufferGeometry()
@@ -145,10 +159,19 @@ export class GraphView {
     )
     const lines = new THREE.LineSegments(
       this.edgeGeom,
-      new THREE.LineBasicMaterial({ vertexColors: true }),
+      new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85 }),
     )
     lines.frustumCulled = false
     ctx.scene.add(lines)
+
+    // Pointes de flèches : la direction des transitions se lit d'un coup d'œil.
+    this.arrowsMesh = new THREE.InstancedMesh(
+      new THREE.ConeGeometry(0.05, ARROW_LEN, 8),
+      new THREE.MeshBasicMaterial(),
+      graph.edges.length,
+    )
+    this.arrowsMesh.frustumCulled = false
+    ctx.scene.add(this.arrowsMesh)
 
     this.halo = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -161,11 +184,6 @@ export class GraphView {
     this.halo.scale.setScalar(2.2)
     ctx.scene.add(this.halo)
 
-    ctx.scene.add(new THREE.AmbientLight(0xffffff, 0.75))
-    const sun = new THREE.DirectionalLight(0xffffff, 1.2)
-    sun.position.set(5, 8, 6)
-    ctx.scene.add(sun)
-
     ctx.onFrame = (t) => this.updateFrame(t)
   }
 
@@ -173,17 +191,13 @@ export class GraphView {
     return out.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
   }
 
-  /** Tout révéler d'emblée (modes match et repair — pas de brouillard). */
+  /** Tout révéler d'emblée (mode prove — pas de brouillard). */
   revealAll(): void {
     for (let i = 0; i < this.graph.nodes.length; i++) {
       if (this.revealed[i]) continue
       this.revealed[i] = true
       this.revealScale[i] = 1
-      if (this.labels[i] === null && this.labelTexts[i] !== '') {
-        const sprite = labelSprite(this.labelTexts[i])
-        this.labels[i] = sprite
-        this.ctx.scene.add(sprite)
-      }
+      this.ensureLabel(i)
     }
   }
 
@@ -191,11 +205,7 @@ export class GraphView {
   reveal(i: number, from: number | null): void {
     if (this.revealed[i]) return
     this.revealed[i] = true
-    if (this.labels[i] === null && this.labelTexts[i] !== '') {
-      const sprite = labelSprite(this.labelTexts[i])
-      this.labels[i] = sprite
-      this.ctx.scene.add(sprite)
-    }
+    this.ensureLabel(i)
     const origin = from === null ? i : from
     for (let a = 0; a < 3; a++) this.display[i * 3 + a] = this.target[origin * 3 + a]
     this.ctx.addTween({
@@ -210,6 +220,14 @@ export class GraphView {
     })
   }
 
+  private ensureLabel(i: number): void {
+    if (this.labels[i] === null && this.labelTexts[i] !== '') {
+      const sprite = labelSprite(this.labelTexts[i])
+      this.labels[i] = sprite
+      this.ctx.scene.add(sprite)
+    }
+  }
+
   /** Sélectionne un nœud : surlignage + étiquettes d'action sur ses flèches sortantes. */
   setSelected(i: number | null): void {
     this.selected = i
@@ -222,7 +240,7 @@ export class GraphView {
     this.edgeLabels.clear()
     if (i !== null) {
       for (const e of this.graph.successors[i]) {
-        const sprite = labelSprite(this.graph.edges[e].action, '#ffb04d', 0.0095)
+        const sprite = labelSprite(this.graph.edges[e].action, edgeLabelColor, 0.009)
         this.edgeLabels.set(e, sprite)
         this.ctx.scene.add(sprite)
       }
@@ -243,53 +261,57 @@ export class GraphView {
     const styles = this.styles
     for (let i = 0; i < this.graph.nodes.length; i++) {
       this.tmpColor.copy(styles.overrides?.get(i) ?? this.nodeColors[i])
-      if (styles.frontier.has(i)) this.tmpColor.lerp(FRONTIER_TINT, 0.45)
-      if (i === styles.highlight) this.tmpColor.lerp(WHITE, 0.45)
-      if (styles.dimmed?.has(i)) this.tmpColor.lerp(BG, 0.62)
+      if (styles.frontier.has(i)) this.tmpColor.lerp(color.frontier, 0.55)
+      if (i === styles.highlight) this.tmpColor.lerp(color.selected, 0.45)
+      if (styles.dimmed?.has(i)) this.tmpColor.lerp(color.background, 0.62)
       // La région reste lisible même sur un état fantôme (appliquée après).
-      if (styles.region?.has(i)) this.tmpColor.lerp(WHITE, 0.38)
-      if (i === this.selected) this.tmpColor.lerp(WHITE, 0.5)
+      if (styles.region?.has(i)) this.tmpColor.lerp(color.region, 0.45)
+      if (i === this.selected) this.tmpColor.lerp(color.selected, 0.5)
       this.nodesMesh.setColorAt(i, this.tmpColor)
       const label = this.labels[i]
       if (label !== null)
-        (label.material as THREE.SpriteMaterial).color.setScalar(styles.dimmed?.has(i) ? 0.35 : 1)
+        (label.material as THREE.SpriteMaterial).color.setScalar(styles.dimmed?.has(i) ? 0.4 : 1)
     }
     this.nodesMesh.instanceColor!.needsUpdate = true
 
     const edgeColors = this.edgeGeom.getAttribute('color') as THREE.BufferAttribute
     for (let e = 0; e < this.graph.edges.length; e++) {
-      const outgoing = this.selected !== null && this.graph.edges[e].from === this.selected
-      const c = styles.ctiEdges?.has(e)
-        ? EDGE.cti
-        : outgoing
-          ? EDGE.selected
-          : styles.traceEdges.has(e)
-            ? EDGE.trace
-            : styles.enabledEdges.has(e)
-              ? EDGE.enabled
-              : EDGE.base
+      const c = this.edgeColor(e)
       for (const v of [0, 1]) edgeColors.setXYZ(e * 2 + v, c.r, c.g, c.b)
+      this.arrowsMesh.setColorAt(e, c)
     }
     edgeColors.needsUpdate = true
+    this.arrowsMesh.instanceColor!.needsUpdate = true
+  }
+
+  private edgeColor(e: number): THREE.Color {
+    const s = this.styles
+    if (s.ctiEdges?.has(e)) return color.edgeCti
+    if (s.traceEdges.has(e)) return color.edgeAccent
+    if (this.selected !== null && this.graph.edges[e].from === this.selected) return color.edgeAccent
+    if (s.enabledEdges.has(e)) return this.tmpColor.copy(color.edgeAccent).multiplyScalar(0.55)
+    return this.tmpColor.copy(color.edgeBase).multiplyScalar(0.22)
   }
 
   /** Raycast → indice de nœud révélé, ou null. */
   pick(ndc: THREE.Vector2): number | null {
     // three fige la sphère englobante au premier raycast ; si celui-ci part
     // avant la première frame (matrices identité), tout pick rate ensuite.
-    this.nodesMesh.computeBoundingSphere()
+    this.pickMesh.computeBoundingSphere()
     this.raycaster.setFromCamera(ndc, this.ctx.camera)
-    for (const hit of this.raycaster.intersectObject(this.nodesMesh)) {
+    for (const hit of this.raycaster.intersectObject(this.pickMesh)) {
       const i = hit.instanceId
       if (i !== undefined && this.revealed[i] && this.revealScale[i] > 0.5) return i
     }
     return null
   }
 
-
   private updateFrame(time: number): void {
     const { graph, dummy } = this
-    // Tout est réécrit chaque frame — trivial à ces tailles de graphe.
+    const camera = this.ctx.camera
+    // Décalage des étiquettes : au-dessus du nœud, dans le plan caméra.
+    const labelUp = this.tmpA.copy(UP).applyQuaternion(camera.quaternion).multiplyScalar(0.58)
+
     for (let i = 0; i < graph.nodes.length; i++) {
       let s = this.revealed[i] ? this.revealScale[i] : 0
       if (i === this.styles.current) s *= 1.35
@@ -298,13 +320,18 @@ export class GraphView {
       if (this.styles.dimmed?.has(i)) s *= 0.55
       if (i === this.selected) s *= 1.3
       dummy.position.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
+      dummy.quaternion.copy(camera.quaternion) // anneaux billboardés (identité portfolio)
       dummy.scale.setScalar(Math.max(s, 1e-4))
       dummy.updateMatrix()
       this.nodesMesh.setMatrixAt(i, dummy.matrix)
 
       const label = this.labels[i]
       if (label !== null) {
-        label.position.set(this.display[i * 3], this.display[i * 3 + 1] - 0.72, this.display[i * 3 + 2])
+        label.position.set(
+          this.display[i * 3] + labelUp.x,
+          this.display[i * 3 + 1] + labelUp.y,
+          this.display[i * 3 + 2] + labelUp.z,
+        )
         const mat = label.material as THREE.SpriteMaterial
         // Gros graphes : on tait les étiquettes des fantômes (l'inspecteur prend le relais).
         const quiet =
@@ -316,26 +343,48 @@ export class GraphView {
     }
     this.nodesMesh.instanceMatrix.needsUpdate = true
 
+    // Arêtes en retrait des nœuds + pointe de flèche orientée vers la cible.
     for (let e = 0; e < graph.edges.length; e++) {
       const { from, to } = graph.edges[e]
-      const visible = this.revealed[from] && this.revealed[to]
+      const visible = this.revealed[from] && this.revealed[to] && from !== to
+      this.tmpA.set(this.display[from * 3], this.display[from * 3 + 1], this.display[from * 3 + 2])
+      this.tmpB.set(this.display[to * 3], this.display[to * 3 + 1], this.display[to * 3 + 2])
+      this.tmpDir.subVectors(this.tmpB, this.tmpA)
+      const len = this.tmpDir.length()
+      if (!visible || len < EDGE_INSET * 2.2) {
+        // Arête cachée ou dégénérée : ligne réduite à un point, cône escamoté.
+        for (let a = 0; a < 3; a++) {
+          this.edgePos[e * 6 + a] = this.tmpA.getComponent(a)
+          this.edgePos[e * 6 + 3 + a] = this.tmpA.getComponent(a)
+        }
+        dummy.position.copy(this.tmpA)
+        dummy.scale.setScalar(1e-4)
+        dummy.updateMatrix()
+        this.arrowsMesh.setMatrixAt(e, dummy.matrix)
+        continue
+      }
+      this.tmpDir.divideScalar(len)
+      const start = this.tmpA.addScaledVector(this.tmpDir, EDGE_INSET)
+      const end = this.tmpB.addScaledVector(this.tmpDir, -(EDGE_INSET + ARROW_LEN))
       for (let a = 0; a < 3; a++) {
-        this.edgePos[e * 6 + a] = this.display[from * 3 + a]
-        // Arête cachée : dégénérée sur son origine (invisible, coût nul).
-        this.edgePos[e * 6 + 3 + a] = this.display[(visible ? to : from) * 3 + a]
+        this.edgePos[e * 6 + a] = start.getComponent(a)
+        this.edgePos[e * 6 + 3 + a] = end.getComponent(a)
+      }
+      dummy.position.copy(end).addScaledVector(this.tmpDir, ARROW_LEN / 2)
+      dummy.quaternion.setFromUnitVectors(UP, this.tmpDir)
+      dummy.scale.setScalar(1)
+      dummy.updateMatrix()
+      this.arrowsMesh.setMatrixAt(e, dummy.matrix)
+
+      const sprite = this.edgeLabels.get(e)
+      if (sprite !== undefined) {
+        sprite.position.lerpVectors(start, end, 0.5)
+        sprite.position.y += 0.16
+        sprite.visible = true
       }
     }
     this.edgeGeom.getAttribute('position').needsUpdate = true
-
-    for (const [e, sprite] of this.edgeLabels) {
-      const { from, to } = graph.edges[e]
-      sprite.position.set(
-        (this.display[from * 3] + this.display[to * 3]) / 2,
-        (this.display[from * 3 + 1] + this.display[to * 3 + 1]) / 2 + 0.18,
-        (this.display[from * 3 + 2] + this.display[to * 3 + 2]) / 2,
-      )
-      sprite.visible = this.revealed[from] && this.revealed[to]
-    }
+    this.arrowsMesh.instanceMatrix.needsUpdate = true
 
     const cur = this.styles.current
     this.halo.visible = cur !== null
@@ -346,7 +395,7 @@ export class GraphView {
         this.display[cur * 3 + 2],
       )
       const mat = this.halo.material as THREE.SpriteMaterial
-      mat.color.set(this.graph.nodes[cur].violating ? 0xff3b52 : 0x6ec8ff)
+      mat.color.copy(this.graph.nodes[cur].violating ? color.haloViolating : color.haloCurrent)
       mat.opacity = 0.55 + 0.25 * Math.sin(time * 0.004)
     }
   }

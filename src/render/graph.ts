@@ -201,6 +201,31 @@ export class GraphView {
     }
   }
 
+  /** Révélation en cascade depuis un nœud d'origine (entrée d'un niveau prove). */
+  revealCascade(origin: number): void {
+    const ox = this.target[origin * 3]
+    const oy = this.target[origin * 3 + 1]
+    const oz = this.target[origin * 3 + 2]
+    let maxDist = 1e-6
+    const dists = new Float32Array(this.graph.nodes.length)
+    for (let i = 0; i < this.graph.nodes.length; i++) {
+      dists[i] = Math.hypot(
+        this.target[i * 3] - ox,
+        this.target[i * 3 + 1] - oy,
+        this.target[i * 3 + 2] - oz,
+      )
+      maxDist = Math.max(maxDist, dists[i])
+    }
+    for (let i = 0; i < this.graph.nodes.length; i++) {
+      this.revealed[i] = true
+      this.ensureLabel(i)
+      const delay = 60 + (dists[i] / maxDist) * 850
+      window.setTimeout(() => {
+        this.ctx.addTween({ dur: 380, step: (k) => (this.revealScale[i] = k) })
+      }, delay)
+    }
+  }
+
   /** Éclosion d'un nœud : apparaît sur son parent puis glisse vers sa place. */
   reveal(i: number, from: number | null): void {
     if (this.revealed[i]) return
@@ -385,6 +410,21 @@ export class GraphView {
     }
     this.edgeGeom.getAttribute('position').needsUpdate = true
     this.arrowsMesh.instanceMatrix.needsUpdate = true
+
+    // Pulsation des CTI : l'œil est attiré vers l'erreur d'induction.
+    const cti = this.styles.ctiEdges
+    if (cti !== undefined && cti.size > 0) {
+      const k = 0.6 + 0.4 * Math.sin(time * 0.006)
+      const edgeColors = this.edgeGeom.getAttribute('color') as THREE.BufferAttribute
+      for (const e of cti) {
+        this.tmpColor.copy(color.edgeCti).multiplyScalar(k)
+        for (const v of [0, 1])
+          edgeColors.setXYZ(e * 2 + v, this.tmpColor.r, this.tmpColor.g, this.tmpColor.b)
+        this.arrowsMesh.setColorAt(e, this.tmpColor)
+      }
+      edgeColors.needsUpdate = true
+      this.arrowsMesh.instanceColor!.needsUpdate = true
+    }
 
     const cur = this.styles.current
     this.halo.visible = cur !== null

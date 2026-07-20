@@ -100,6 +100,14 @@ export class SceneCtx {
     this.tweens.push({ t0: performance.now(), tween })
   }
 
+  /** Cadre la caméra sur un graphe de rayon donné. */
+  frameRadius(radius: number): void {
+    const d = Math.max(radius * 1.85 + 5, 12)
+    this.camera.position.set(0, radius * 0.32, d)
+    this.controls.target.set(0, 0, 0)
+    this.controls.update()
+  }
+
   /** Arrêt propre (changement de niveau). */
   dispose(): void {
     this.renderer.setAnimationLoop(null)

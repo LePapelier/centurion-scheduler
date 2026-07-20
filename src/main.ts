@@ -12,14 +12,21 @@ import { GraphView } from './render/graph'
 import { color } from './render/palette'
 import { SceneCtx } from './render/scene'
 import { loadProgress, recordScore, saveProgress, unlock } from './ui/campaign'
-import { FormulaEditor, OPERATOR_COMPLETIONS } from './ui/editor'
+import { FormulaEditor, OPERATOR_COMPLETIONS, type EditorOpts } from './ui/editor'
 import { Hud, type Brick } from './ui/hud'
 import { runTour } from './ui/tour'
 import { tours } from './ui/tours'
 
 const app = document.getElementById('app')!
 const progress = loadProgress()
-const levelNames = levels.map((l) => l.name)
+
+/** Rayon du graphe posé (pour cadrer la caméra). */
+function graphRadius(positions: Float32Array): number {
+  let r = 0
+  for (let i = 0; i < positions.length; i += 3)
+    r = Math.max(r, Math.hypot(positions[i], positions[i + 1], positions[i + 2]))
+  return r
+}
 
 // ——— Helpers communs ———
 
@@ -68,6 +75,7 @@ function attachInspection(
   graph: Graph,
   hud: Hud,
   badges: (i: number) => string,
+  opts: { refocus(): void; recenter(): void },
 ): void {
   const canvas = ctx.renderer.domElement
   const ndc = new THREE.Vector2()
@@ -104,6 +112,7 @@ function attachInspection(
     if (hit === null) {
       view.setSelected(null)
       hud.hideInspector()
+      opts.refocus() // le clavier reprend la main sans re-cliquer le panneau
       return
     }
     view.setSelected(hit)
@@ -116,8 +125,16 @@ function attachInspection(
       ev.clientX,
       ev.clientY,
       `${rows}${badges(hit)}<div class="note">${out === 0 ? 'aucune action possible' : `${out} action${out > 1 ? 's' : ''} — flèches étiquetées`}</div>`,
-      () => view.setSelected(null),
+      () => {
+        view.setSelected(null)
+        opts.refocus()
+      },
     )
+    opts.refocus()
+  })
+  // Double-clic dans le vide : recadrer la caméra.
+  canvas.addEventListener('dblclick', (ev) => {
+    if (view.pick(toNdc(ev as PointerEvent)) === null) opts.recenter()
   })
 }
 
@@ -140,22 +157,37 @@ function startLevel(index: number): () => void {
   let pendingWin: (() => void) | null = null
 
   const win = (score: number, title: string, body: string): void => {
+    const previousBest = progress.scores[level.id]
     recordScore(progress, level.id, score)
     unlock(progress, Math.min(index + 1, levels.length - 1))
-    const show = (): void => hud.showVictory(title, body, hasNext)
+    const record =
+      previousBest === undefined
+        ? '<p class="record">premier succès enregistré</p>'
+        : score < previousBest
+          ? `<p class="record">nouveau record ! (ancien : ${previousBest})</p>`
+          : `<p class="record">record : ${previousBest}</p>`
+    const show = (): void => hud.showVictory(title, body + record, hasNext)
     if (tourActive) pendingWin = show
     else show()
   }
 
-  const hud = new Hud(app, level, levelNames, index, progress.unlocked, {
-    onUndo: () => modeHooks.onUndo?.(),
-    onReset: () => {
-      hud.hideVictory()
-      modeHooks.onReset()
+  const hud = new Hud(
+    app,
+    level,
+    levels.map((l) => ({ name: l.name, best: progress.scores[l.id] })),
+    index,
+    progress.unlocked,
+    {
+      onUndo: () => modeHooks.onUndo?.(),
+      onReset: () => {
+        hud.hideVictory()
+        modeHooks.onReset()
+      },
+      onSelectLevel: loadLevel,
+      onNext: () => loadLevel(index + 1),
+      onDeleteBrick: (name) => modeHooks.onDeleteBrick?.(name),
     },
-    onSelectLevel: loadLevel,
-    onNext: () => loadLevel(index + 1),
-  })
+  )
 
   const ctx = new SceneCtx(app)
   let lastCameraEvent = 0
@@ -188,6 +220,7 @@ function startLevel(index: number): () => void {
 interface ModeHooks {
   onReset(): void
   onUndo?(): void
+  onDeleteBrick?(name: string): void
 }
 
 type Win = (score: number, title: string, body: string) => void
@@ -201,8 +234,14 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     graph.edges.map((e) => [e.from, e.to] as const),
   )
   const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), nodeLabels(level, graph))
-  attachInspection(ctx, view, graph, hud, (i) =>
-    graph.nodes[i].violating ? '<div class="badge bad">viole l’INVARIANT</div>' : '',
+  ctx.frameRadius(graphRadius(positions))
+  attachInspection(
+    ctx,
+    view,
+    graph,
+    hud,
+    (i) => (graph.nodes[i].violating ? '<div class="badge bad">viole l’INVARIANT</div>' : ''),
+    { refocus: () => editor.focus(), recenter: () => glideTo(currentNode(game, graph)) },
   )
 
   let game: Game = newGame(level.id)
@@ -272,7 +311,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     glideTo(at)
   }
 
-  const editor = new FormulaEditor({
+  const editorOpts: EditorOpts = {
     parent: hud.editorMount,
     placeholder: 'nom d’une action activée, puis Entrée',
     completions: () =>
@@ -301,10 +340,21 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     },
     lint: (text) =>
       resolve(text) !== null ? null : `« ${text} » : pas une action activée (Ctrl-Espace pour la liste)`,
-  })
+  }
+  const editor = new FormulaEditor(editorOpts)
 
   refresh()
   editor.focus()
+
+  const doUndo = (): void => {
+    if (!locked && game.moves.length > 0) {
+      game = undo(game)
+      prevState = null
+      refresh()
+      editor.focus()
+    }
+  }
+  editorOpts.onEmptyBackspace = doUndo
 
   return {
     onReset: () => {
@@ -315,14 +365,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       refresh()
       editor.focus()
     },
-    onUndo: () => {
-      if (!locked && game.moves.length > 0) {
-        game = undo(game)
-        prevState = null
-        refresh()
-        editor.focus()
-      }
-    },
+    onUndo: doUndo,
   }
 }
 
@@ -341,18 +384,34 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   )
   const labels = nodeLabels(level, graph)
   const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), labels)
-  view.revealAll()
-  ctx.controls.target.set(0, 0, 0)
-  attachInspection(ctx, view, graph, hud, (i) => {
-    const parts: string[] = []
-    parts.push(
-      space.reachable.has(i)
-        ? '<div class="badge ok">atteignable</div>'
-        : '<div class="badge ghost">état fantôme</div>',
-    )
-    if (graph.nodes[i].violating) parts.push('<div class="badge bad">viole l’INVARIANT</div>')
-    return parts.join('')
-  })
+  view.revealCascade(space.init)
+  ctx.frameRadius(graphRadius(positions))
+  attachInspection(
+    ctx,
+    view,
+    graph,
+    hud,
+    (i) => {
+      const parts: string[] = []
+      parts.push(
+        space.reachable.has(i)
+          ? '<div class="badge ok">atteignable</div>'
+          : '<div class="badge ghost">état fantôme</div>',
+      )
+      if (graph.nodes[i].violating) parts.push('<div class="badge bad">viole l’INVARIANT</div>')
+      return parts.join('')
+    },
+    {
+      refocus: () => editor.focus(),
+      recenter: () => {
+        const from = ctx.controls.target.clone()
+        ctx.addTween({
+          dur: 450,
+          step: (k) => ctx.controls.target.copy(from).multiplyScalar(1 - k),
+        })
+      },
+    },
+  )
 
   const goal = parseExpr(level.invariantSrc)
   const faint = new Set<number>()
@@ -369,6 +428,18 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
 
   /** Alias : chaque brique est réutilisable par son nom dans les formules. */
   const aliases = (): Map<string, Expr> => new Map(bricks.map((b) => [b.name, b.expr]))
+
+  /** Une brique est supprimable si aucune autre ne mentionne son nom. */
+  const decorated = (): Brick[] =>
+    bricks.map((b) => ({
+      ...b,
+      deletable:
+        !locked &&
+        !b.given &&
+        !bricks.some(
+          (o) => o !== b && new RegExp(`(^|[^A-Za-z0-9_])${b.name}([^A-Za-z0-9_]|$)`).test(o.src),
+        ),
+    }))
 
   const autoName = (): string => {
     for (let i = bricks.length + 1; ; i++) {
@@ -472,21 +543,38 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
         deps: bricks.filter((_, i) => used[i]).map((b) => b.name),
         given: false,
       }]
-      hud.renderBricks(bricks)
+      hud.renderBricks(decorated())
       editor.setText('')
       idle()
       document.dispatchEvent(new CustomEvent('ds:brick-proved'))
       if (refreshGoal()) {
         locked = true
-        const score = bricks.filter((b) => !b.given).reduce((n, b) => n + countTokens(b.src), 0)
-        const wall = bricks
-          .filter((b) => !b.given)
-          .map((b) => `□ ${b.name} ≜ ${b.src}`)
-          .join('<br>')
+        // Score = cône de dépendances de la preuve : l'exploration ne coûte rien.
+        const kept = bricks.map(() => true)
+        for (let i = 0; i < bricks.length; i++) {
+          kept[i] = false
+          if (!impliesGoal(space, bricks.filter((_, j) => kept[j]).map((b) => b.expr), goal))
+            kept[i] = true
+        }
+        const need = new Set(bricks.filter((_, i) => kept[i]).map((b) => b.name))
+        for (let grew = true; grew; ) {
+          grew = false
+          for (const b of bricks)
+            if (need.has(b.name))
+              for (const d of b.deps)
+                if (!need.has(d)) {
+                  need.add(d)
+                  grew = true
+                }
+        }
+        const useful = bricks.filter((b) => need.has(b.name) && !b.given)
+        const score = useful.reduce((n, b) => n + countTokens(b.src), 0)
+        const wall = useful.map((b) => `□ ${b.name} ≜ ${b.src}`).join('<br>')
+        const extra = bricks.filter((b) => !b.given).length - useful.length
         win(
           score,
           'Invariant prouvé',
-          `<p class="formula">${wall}</p><p><b>${bricks.filter((b) => !b.given).length}</b> briques, <b>${score}</b> tokens</p>`,
+          `<p class="formula">${wall}</p><p><b>${useful.length}</b> briques utiles, <b>${score}</b> tokens${extra > 0 ? ` (${extra} brique${extra > 1 ? 's' : ''} hors preuve, non comptée${extra > 1 ? 's' : ''})` : ''}</p>`,
         )
       }
     },
@@ -502,7 +590,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
 
   hud.updateVars(level.init, null)
   hud.setEnabledActions(EMPTY as unknown as Set<string>)
-  hud.renderBricks(bricks)
+  hud.renderBricks(decorated())
   hud.setMoves('')
   refreshGoal()
   idle()
@@ -512,10 +600,18 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     onReset: () => {
       locked = false
       bricks = bricks.filter((b) => b.given)
-      hud.renderBricks(bricks)
+      hud.renderBricks(decorated())
       editor.setText('')
       refreshGoal()
       idle()
+      editor.focus()
+    },
+    onDeleteBrick: (name) => {
+      if (locked) return
+      bricks = bricks.filter((b) => b.name !== name)
+      hud.renderBricks(decorated())
+      refreshGoal()
+      preview(editor.getText())
       editor.focus()
     },
   }

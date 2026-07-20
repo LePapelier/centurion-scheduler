@@ -6,6 +6,14 @@ export interface HudCallbacks {
   onReset(): void
   onSelectLevel(index: number): void
   onNext(): void
+  /** Suppression d'une brique par son nom (mode prove). */
+  onDeleteBrick?(name: string): void
+}
+
+export interface LevelInfo {
+  readonly name: string
+  /** Meilleur score enregistré, ou undefined. */
+  readonly best?: number
 }
 
 export interface Brick {
@@ -15,6 +23,8 @@ export interface Brick {
   /** Noms des briques dont la preuve dépend (vide pour une brique donnée). */
   readonly deps: readonly string[]
   readonly given: boolean
+  /** Supprimable (aucune autre brique ne la mentionne). */
+  readonly deletable?: boolean
 }
 
 /**
@@ -36,6 +46,17 @@ export class Hud {
   private readonly victoryBody: HTMLElement
   private readonly nextBtn: HTMLButtonElement
   private inspectorEl: HTMLElement
+  private readonly cb: HudCallbacks
+  private victoryKeyTimer: number | null = null
+  private readonly victoryKeyHandler = (ev: KeyboardEvent): void => {
+    if (ev.key !== 'Enter' || !this.victoryEl.isConnected) return
+    if (this.victoryEl.classList.contains('hidden')) return
+    ev.preventDefault()
+    ;(this.nextBtn.style.display === 'none'
+      ? (this.victoryEl.querySelector('[data-act=replay]') as HTMLButtonElement)
+      : this.nextBtn
+    ).click()
+  }
 
   /** Emplacement de l'éditeur (console trace, ou candidate prove). */
   readonly editorMount: HTMLElement
@@ -43,11 +64,12 @@ export class Hud {
   constructor(
     root: HTMLElement,
     level: CompiledLevel,
-    levelNames: readonly string[],
+    levelInfos: readonly LevelInfo[],
     currentIndex: number,
     unlocked: number,
     cb: HudCallbacks,
   ) {
+    this.cb = cb
     const panel = document.createElement('div')
     panel.className = 'panel'
     panel.innerHTML = `
@@ -80,11 +102,11 @@ export class Hud {
     root.appendChild(panel)
 
     const levelsEl = panel.querySelector('.levels')!
-    levelNames.forEach((name, i) => {
+    levelInfos.forEach(({ name, best }, i) => {
       const b = document.createElement('button')
       b.className = 'lvl'
       b.textContent = String(i + 1)
-      b.title = i <= unlocked ? name : 'verrouillé'
+      b.title = i <= unlocked ? `${name}${best !== undefined ? ` — record : ${best}` : ''}` : 'verrouillé'
       b.disabled = i > unlocked
       b.classList.toggle('active', i === currentIndex)
       b.addEventListener('click', () => cb.onSelectLevel(i))
@@ -169,10 +191,14 @@ export class Hud {
         <div class="brick${b.given ? ' given' : ''}">
           <span class="box">□</span> <span class="bname">${b.name}</span> ≜ <span class="src">${b.src}</span>
           ${b.given ? '<span class="tag">donnée</span>' : ''}
+          ${b.deletable === true ? `<button class="bdel" data-name="${b.name}" title="supprimer">✕</button>` : ''}
           ${b.deps.length > 0 ? `<div class="deps">└ s'appuie sur : ${b.deps.map((d) => `<span class="dep">${d}</span>`).join(' · ')}</div>` : ''}
         </div>`,
       )
       .join('')
+    this.bricksEl.querySelectorAll<HTMLButtonElement>('.bdel').forEach((btn) => {
+      btn.addEventListener('click', () => this.cb.onDeleteBrick?.(btn.dataset.name!))
+    })
   }
 
   setGoalStatus(html: string, proved: boolean): void {
@@ -221,9 +247,20 @@ export class Hud {
     this.victoryBody.innerHTML = bodyHtml
     this.nextBtn.style.display = hasNext ? '' : 'none'
     this.victoryEl.classList.remove('hidden')
+    // Au tick suivant : l'Entrée qui vient de déclencher la victoire ne doit
+    // pas être elle-même interprétée comme « niveau suivant ».
+    this.victoryKeyTimer = window.setTimeout(() => {
+      this.victoryKeyTimer = null
+      window.addEventListener('keydown', this.victoryKeyHandler)
+    }, 0)
   }
 
   hideVictory(): void {
     this.victoryEl.classList.add('hidden')
+    if (this.victoryKeyTimer !== null) {
+      window.clearTimeout(this.victoryKeyTimer)
+      this.victoryKeyTimer = null
+    }
+    window.removeEventListener('keydown', this.victoryKeyHandler)
   }
 }

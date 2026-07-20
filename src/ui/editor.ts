@@ -1,4 +1,4 @@
-import { autocompletion, completionKeymap, type Completion, type CompletionContext } from '@codemirror/autocomplete'
+import { autocompletion, completionKeymap, startCompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
 import { linter } from '@codemirror/lint'
@@ -15,6 +15,8 @@ export interface EditorOpts {
   onSubmit(text: string): void
   /** Message d'erreur à souligner, ou null si la saisie est valide. */
   lint(text: string): string | null
+  /** Backspace sur un éditeur vide (trace : annuler le dernier coup). */
+  onEmptyBackspace?(): void
 }
 
 /** Saisie ASCII réécrite en symboles du DSL à la volée. */
@@ -124,7 +126,7 @@ export class FormulaEditor {
             const changes = asciiRewrites(tr.newDoc.toString())
             return changes.length === 0 ? tr : [tr, { changes, sequential: true }]
           }),
-          // Entrée = soumettre (avant tout autre binding).
+          // Entrée = soumettre ; Backspace à vide = annuler (avant tout autre binding).
           Prec.highest(
             keymap.of([
               {
@@ -134,8 +136,23 @@ export class FormulaEditor {
                   return true
                 },
               },
+              {
+                key: 'Backspace',
+                run: (view) => {
+                  if (view.state.doc.length > 0 || opts.onEmptyBackspace === undefined) return false
+                  opts.onEmptyBackspace()
+                  return true
+                },
+              },
             ]),
           ),
+          // La complétion s'ouvre dès le focus : le champ vide invite à jouer.
+          EditorView.domEventHandlers({
+            focus: (_ev, view) => {
+              setTimeout(() => startCompletion(view), 0)
+              return false
+            },
+          }),
           keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]),
           autocompletion({
             activateOnTyping: true,

@@ -61,7 +61,7 @@ export class SceneCtx {
   readonly controls: OrbitControls
   onFrame?: (time: number) => void
 
-  private tweens: { t0: number; tween: Tween }[] = []
+  private tweens: { t0: number; tween: Tween; tag?: string }[] = []
 
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -96,8 +96,11 @@ export class SceneCtx {
     this.renderer.setAnimationLoop((time) => this.frame(time))
   }
 
-  addTween(tween: Tween): void {
-    this.tweens.push({ t0: performance.now(), tween })
+  /** `tag` : un nouveau tween remplace tout tween en cours portant le même tag
+   *  (évite deux glissements caméra concurrents qui se battent). */
+  addTween(tween: Tween, tag?: string): void {
+    if (tag !== undefined) this.tweens = this.tweens.filter((t) => t.tag !== tag)
+    this.tweens.push({ t0: performance.now(), tween, tag })
   }
 
   /** Impulsion caméra brève (un pas est joué). */
@@ -111,20 +114,26 @@ export class SceneCtx {
     })
   }
 
-  /** Secousse courte de la cible caméra (violation). */
+  /** Secousse courte de la cible caméra (violation). Offset RELATIF décroissant :
+   *  compose proprement avec un glissement de caméra simultané. */
   shake(amplitude = 0.35): void {
-    const base = this.controls.target.clone()
+    const prev = new THREE.Vector3()
+    const next = new THREE.Vector3()
     this.addTween({
       dur: 320,
       step: (k) => {
         const a = amplitude * (1 - k)
-        this.controls.target.set(
-          base.x + (Math.random() - 0.5) * a,
-          base.y + (Math.random() - 0.5) * a,
-          base.z + (Math.random() - 0.5) * a,
+        next.set(
+          (Math.random() - 0.5) * a,
+          (Math.random() - 0.5) * a,
+          (Math.random() - 0.5) * a,
         )
+        this.controls.target.sub(prev).add(next)
+        prev.copy(next)
       },
-      done: () => this.controls.target.copy(base),
+      done: () => {
+        this.controls.target.sub(prev)
+      },
     })
   }
 

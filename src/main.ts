@@ -289,7 +289,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   const glideTo = (node: number): void => {
     const from = ctx.controls.target.clone()
     const to = view.nodePosition(node, new THREE.Vector3())
-    ctx.addTween({ dur: 500, step: (k) => ctx.controls.target.lerpVectors(from, to, k) })
+    ctx.addTween({ dur: 500, step: (k) => ctx.controls.target.lerpVectors(from, to, k) }, 'glide')
   }
 
   const refresh = (ghost = -1): void => {
@@ -346,7 +346,9 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     } else {
       hud.setHint('')
     }
-    glideTo(at)
+    // À la victoire, la secousse joue seule ; le glissement suit.
+    if (graph.nodes[at].violating) window.setTimeout(() => glideTo(at), 400)
+    else glideTo(at)
   }
 
   /** Jouer une action par son bouton. Tous les effets du pas. */
@@ -446,10 +448,13 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       refocus: () => editor.focus(),
       recenter: () => {
         const from = ctx.controls.target.clone()
-        ctx.addTween({
-          dur: 450,
-          step: (k) => ctx.controls.target.copy(from).multiplyScalar(1 - k),
-        })
+        ctx.addTween(
+          {
+            dur: 450,
+            step: (k) => ctx.controls.target.copy(from).multiplyScalar(1 - k),
+          },
+          'glide',
+        )
       },
     },
   )

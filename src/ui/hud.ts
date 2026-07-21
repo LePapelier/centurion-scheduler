@@ -343,10 +343,12 @@ export class Hud {
     this.inspectorEl.classList.add('hidden')
   }
 
-  showVictory(title: string, bodyHtml: string, hasNext: boolean): void {
+  showVictory(title: string, bodyHtml: string, hasNext: boolean, tone: 'gold' | 'green' = 'gold'): void {
     this.victoryEl.querySelector('h2')!.textContent = title
     this.victoryBody.innerHTML = bodyHtml
     this.nextBtn.style.display = hasNext ? '' : 'none'
+    this.victoryEl.classList.remove('gold', 'green')
+    this.victoryEl.classList.add(tone)
     this.victoryEl.classList.remove('hidden')
     // Au tick suivant : l'Entrée qui vient de déclencher la victoire ne doit
     // pas être elle-même interprétée comme « niveau suivant ».

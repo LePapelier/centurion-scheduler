@@ -177,7 +177,9 @@ function startLevel(index: number): () => void {
         : score < previousBest
           ? `<p class="record">nouveau record ! (ancien : ${previousBest})</p>`
           : `<p class="record">record : ${previousBest}</p>`
-    const show = (): void => hud.showVictory(title, body + record, hasNext)
+    // Casser = triomphe doré du démon ; prouver = sceau vert.
+    const tone = level.mode === 'trace' ? 'gold' : 'green'
+    const show = (): void => hud.showVictory(title, body + record, hasNext, tone)
     if (tourActive) pendingWin = show
     else show()
   }
@@ -336,7 +338,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
           : `optimum : ${graph.par} coups`
       win(
         game.moves.length,
-        'Règle brisée',
+        'Règle brisée !',
         `<p>${trace.join(' → ')}</p><p><b>${game.moves.length}</b> coups — ${medal}</p>`,
       )
     } else if (moves.size === 0) {

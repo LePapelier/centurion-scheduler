@@ -89,6 +89,7 @@ export class GraphView {
   private readonly labelTexts: readonly string[]
 
   private readonly nodesMesh: THREE.InstancedMesh
+  private readonly glowMesh: THREE.InstancedMesh
   private readonly arrowsMesh: THREE.InstancedMesh
   private readonly edgeGeom: THREE.BufferGeometry
   private readonly edgePos: Float32Array
@@ -128,19 +129,30 @@ export class GraphView {
     this.revealed = new Array(n).fill(false)
     this.labels = new Array(n).fill(null)
 
+    // Sphères néon : couleur pleine non éclairée + lueur additive billboardée.
     this.nodesMesh = new THREE.InstancedMesh(
       new THREE.IcosahedronGeometry(NODE_RADIUS, 2),
-      new THREE.MeshLambertMaterial(),
+      new THREE.MeshBasicMaterial(),
       n,
     )
     this.nodesMesh.frustumCulled = false
     for (let i = 0; i < n; i++) this.nodesMesh.setColorAt(i, nodeColors[i])
     ctx.scene.add(this.nodesMesh)
 
-    ctx.scene.add(new THREE.AmbientLight(0xffffff, 0.8))
-    const sun = new THREE.DirectionalLight(0xffffff, 1.1)
-    sun.position.set(5, 8, 6)
-    ctx.scene.add(sun)
+    this.glowMesh = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({
+        map: haloTexture(),
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+      n,
+    )
+    this.glowMesh.frustumCulled = false
+    this.glowMesh.renderOrder = 1
+    for (let i = 0; i < n; i++) this.glowMesh.setColorAt(i, nodeColors[i])
+    ctx.scene.add(this.glowMesh)
 
     this.edgePos = new Float32Array(graph.edges.length * 6)
     this.edgeGeom = new THREE.BufferGeometry()
@@ -285,11 +297,13 @@ export class GraphView {
       if (styles.region?.has(i)) this.tmpColor.lerp(color.region, 0.45)
       if (i === this.selected) this.tmpColor.lerp(color.selected, 0.5)
       this.nodesMesh.setColorAt(i, this.tmpColor)
+      this.glowMesh.setColorAt(i, this.tmpColor)
       const label = this.labels[i]
       if (label !== null)
         (label.material as THREE.SpriteMaterial).color.setScalar(styles.dimmed?.has(i) ? 0.4 : 1)
     }
     this.nodesMesh.instanceColor!.needsUpdate = true
+    this.glowMesh.instanceColor!.needsUpdate = true
 
     const edgeColors = this.edgeGeom.getAttribute('color') as THREE.BufferAttribute
     for (let e = 0; e < this.graph.edges.length; e++) {
@@ -337,9 +351,16 @@ export class GraphView {
       if (this.styles.dimmed?.has(i)) s *= 0.55
       if (i === this.selected) s *= 1.3
       dummy.position.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
+      dummy.quaternion.identity()
       dummy.scale.setScalar(Math.max(s, 1e-4))
       dummy.updateMatrix()
       this.nodesMesh.setMatrixAt(i, dummy.matrix)
+
+      // Lueur néon : plan billboardé, ~2.6× la sphère.
+      dummy.quaternion.copy(camera.quaternion)
+      dummy.scale.setScalar(Math.max(s * NODE_RADIUS * 2.6 * 2, 1e-4))
+      dummy.updateMatrix()
+      this.glowMesh.setMatrixAt(i, dummy.matrix)
 
       const label = this.labels[i]
       if (label !== null) {
@@ -358,6 +379,7 @@ export class GraphView {
       }
     }
     this.nodesMesh.instanceMatrix.needsUpdate = true
+    this.glowMesh.instanceMatrix.needsUpdate = true
 
     // Arêtes en retrait des nœuds + pointe de flèche orientée vers la cible.
     for (let e = 0; e < graph.edges.length; e++) {

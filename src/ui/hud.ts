@@ -83,23 +83,31 @@ export class Hud {
         <div class="vars"></div>
         <div class="actions"></div>
         <div class="inv"><span class="kw">INVARIANT</span> <span class="src">${level.invariantSrc}</span></div>
-      </div>
+      </div>`
+    root.appendChild(panel)
+
+    // Barre de commande : saisie, briques et feedback, centrées en bas.
+    const bar = document.createElement('div')
+    bar.className = 'commandbar'
+    bar.innerHTML = `
       ${
         level.mode === 'prove'
           ? `<div class="bricks"><div class="kw">BRIQUES</div><div class="bricks-list"></div></div>
              <div class="goal-status"></div>`
           : ''
       }
-      <div class="editor-mount"></div>
       <div class="moves"></div>
       <div class="status"></div>
       <div class="hint"></div>
       <div class="trace"></div>
-      <div class="buttons">
-        <button data-act="undo">← annuler</button>
-        <button data-act="reset">réinitialiser</button>
+      <div class="editor-row">
+        <div class="editor-mount"></div>
+        <div class="buttons">
+          <button data-act="undo">← annuler</button>
+          <button data-act="reset">réinitialiser</button>
+        </div>
       </div>`
-    root.appendChild(panel)
+    root.appendChild(bar)
 
     const levelsEl = panel.querySelector('.levels')!
     levelInfos.forEach(({ name, best }, i) => {
@@ -131,17 +139,17 @@ export class Hud {
     }
 
     this.invEl = panel.querySelector('.inv')
-    this.bricksEl = panel.querySelector('.bricks-list')
-    this.goalEl = panel.querySelector('.goal-status')
-    this.movesEl = panel.querySelector('.moves')!
-    this.statusEl = panel.querySelector('.status')!
-    this.traceEl = panel.querySelector('.trace')!
-    this.hintEl = panel.querySelector('.hint')!
-    this.editorMount = panel.querySelector('.editor-mount')!
-    panel.querySelector('[data-act=undo]')!.addEventListener('click', cb.onUndo)
-    panel.querySelector('[data-act=reset]')!.addEventListener('click', cb.onReset)
+    this.bricksEl = bar.querySelector('.bricks-list')
+    this.goalEl = bar.querySelector('.goal-status')
+    this.movesEl = bar.querySelector('.moves')!
+    this.statusEl = bar.querySelector('.status')!
+    this.traceEl = bar.querySelector('.trace')!
+    this.hintEl = bar.querySelector('.hint')!
+    this.editorMount = bar.querySelector('.editor-mount')!
+    bar.querySelector('[data-act=undo]')!.addEventListener('click', cb.onUndo)
+    bar.querySelector('[data-act=reset]')!.addEventListener('click', cb.onReset)
     if (level.mode !== 'trace')
-      (panel.querySelector('[data-act=undo]') as HTMLElement).style.display = 'none'
+      (bar.querySelector('[data-act=undo]') as HTMLElement).style.display = 'none'
 
     this.inspectorEl = document.createElement('div')
     this.inspectorEl.className = 'inspector hidden'

@@ -9,8 +9,12 @@ export interface HudCallbacks {
   onNext(): void
   /** Suppression d'une brique par son nom (mode prove). */
   onDeleteBrick?(name: string): void
-  /** Clic sur un jeton d'action : insérer son nom dans l'éditeur. */
+  /** Clic sur un jeton d'action : insérer son nom dans l'éditeur (prove). */
   onInsertAction?(name: string): void
+  /** Clic sur un bouton d'action : jouer le pas (trace). */
+  onPlayAction?(name: string): void
+  /** Survol d'un bouton d'action (trace) : aperçu du nœud visé. */
+  onHoverAction?(name: string | null): void
   /** Bascule du son ; retourne le nouvel état. */
   onToggleAudio?(): boolean
   audioEnabled?(): boolean
@@ -108,6 +112,7 @@ export class Hud {
              <div class="goal-status"></div>`
           : ''
       }
+      <div class="actionbar"></div>
       <div class="moves"></div>
       <div class="status"></div>
       <div class="hint"></div>
@@ -158,22 +163,37 @@ export class Hud {
       this.varEls.set(v, el)
     }
 
-    const actionsEl = panel.querySelector('.actions')!
+    // Trace : les actions SONT l'input, au centre de la barre. Prove : référence dans le panneau.
+    const actionsEl =
+      level.mode === 'trace' ? bar.querySelector('.actionbar')! : panel.querySelector('.actions')!
     for (const a of level.actionsSrc) {
       const el = document.createElement('button')
       el.className = 'chip action'
       el.textContent = a.name
       el.addEventListener('click', () => {
-        if (el.classList.contains('enabled') || level.mode === 'prove') cb.onInsertAction?.(a.name)
+        if (level.mode === 'trace') {
+          if (el.classList.contains('enabled')) cb.onPlayAction?.(a.name)
+        } else {
+          cb.onInsertAction?.(a.name)
+        }
       })
       el.addEventListener('mouseenter', () => {
         this.popoverEl.innerHTML = `<span class="kw">ACTION</span> <span class="aname">${a.name}</span> ≜ ${hl(a.guardSrc)} <span class="arrow">→</span> ${hl(a.updateSrc)}`
         this.popoverEl.classList.remove('hidden')
         const r = el.getBoundingClientRect()
         this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 380)}px`
-        this.popoverEl.style.top = `${r.bottom + 6}px`
+        // Dans la barre du bas, le popover s'ouvre vers le haut.
+        if (level.mode === 'trace') {
+          this.popoverEl.style.top = `${r.top - this.popoverEl.offsetHeight - 8}px`
+        } else {
+          this.popoverEl.style.top = `${r.bottom + 6}px`
+        }
+        cb.onHoverAction?.(a.name)
       })
-      el.addEventListener('mouseleave', () => this.popoverEl.classList.add('hidden'))
+      el.addEventListener('mouseleave', () => {
+        this.popoverEl.classList.add('hidden')
+        cb.onHoverAction?.(null)
+      })
       actionsEl.appendChild(el)
       this.actionEls.set(a.name, el)
     }

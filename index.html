@@ -75,6 +75,12 @@
         padding: 10px 14px; backdrop-filter: blur(4px);
       }
       .commandbar .bricks-list { max-height: 132px; overflow-y: auto; }
+      .commandbar .actionbar {
+        display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+        margin-bottom: 6px;
+      }
+      .commandbar .actionbar:empty { display: none; }
+      .commandbar .actionbar .chip { padding: 6px 18px; font-size: 14px; }
       .commandbar .editor-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
       .commandbar .editor-mount { flex: 1; margin: 0; }
       .commandbar .buttons { display: flex; gap: 6px; margin: 0; }

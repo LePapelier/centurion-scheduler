@@ -13,7 +13,7 @@ import { color } from './render/palette'
 import { SceneCtx } from './render/scene'
 import { audio } from './ui/audio'
 import { loadProgress, recordScore, saveProgress, unlock } from './ui/campaign'
-import { FormulaEditor, OPERATOR_COMPLETIONS, type EditorOpts } from './ui/editor'
+import { FormulaEditor, OPERATOR_COMPLETIONS } from './ui/editor'
 import { hl, hlValue } from './ui/highlight'
 import { Hud, type Brick } from './ui/hud'
 import { runTour } from './ui/tour'
@@ -198,6 +198,8 @@ function startLevel(index: number): () => void {
       onNext: () => loadLevel(index + 1),
       onDeleteBrick: (name) => modeHooks.onDeleteBrick?.(name),
       onInsertAction: (name) => modeHooks.onInsertAction?.(name),
+      onPlayAction: (name) => modeHooks.onPlayAction?.(name),
+      onHoverAction: (name) => modeHooks.onHoverAction?.(name),
       onToggleAudio: () => audio.toggle(),
       audioEnabled: () => audio.enabled,
     },
@@ -228,7 +230,10 @@ function startLevel(index: number): () => void {
     })
   }
 
-  return () => ctx.dispose()
+  return () => {
+    modeHooks.onDispose?.()
+    ctx.dispose()
+  }
 }
 
 interface ModeHooks {
@@ -236,6 +241,9 @@ interface ModeHooks {
   onUndo?(): void
   onDeleteBrick?(name: string): void
   onInsertAction?(name: string): void
+  onPlayAction?(name: string): void
+  onHoverAction?(name: string | null): void
+  onDispose?(): void
 }
 
 type Win = (score: number, title: string, body: string) => void
@@ -256,7 +264,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     graph,
     hud,
     (i) => (graph.nodes[i].violating ? '<div class="badge bad">viole l’INVARIANT</div>' : ''),
-    { refocus: () => editor.focus(), recenter: () => glideTo(currentNode(game, graph)) },
+    { refocus: () => undefined, recenter: () => glideTo(currentNode(game, graph)) },
   )
 
   let game: Game = newGame(level.id)
@@ -265,6 +273,8 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
 
   const beacons = new Set<number>()
   for (let i = 0; i < graph.nodes.length; i++) if (graph.nodes[i].violating) beacons.add(i)
+  /** Après la victoire : les états jamais explorés restent en gris. */
+  let mapDimmed: Set<number> | undefined
 
   const enabledMoves = (): Map<string, number> => {
     const at = currentNode(game, graph)
@@ -272,14 +282,6 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     if (!graph.nodes[at].violating)
       for (const e of graph.successors[at]) map.set(graph.edges[e].action, e)
     return map
-  }
-
-  const resolve = (text: string): string | null => {
-    if (text === '') return null
-    const names = [...enabledMoves().keys()]
-    if (names.includes(text)) return text
-    const hits = names.filter((n) => n.startsWith(text))
-    return hits.length === 1 ? hits[0] : null
   }
 
   const glideTo = (node: number): void => {
@@ -304,6 +306,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       enabledEdges: new Set(moves.values()),
       highlight: ghost,
       beacons, // les états interdits luisent à travers le brouillard
+      dimmed: mapDimmed,
     })
     hud.updateVars(graph.nodes[at].state, prevState)
     hud.setEnabledActions(new Set(moves.keys()))
@@ -312,6 +315,20 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     hud.setTrace(game.moves.map((e) => graph.edges[e].action))
     if (graph.nodes[at].violating) {
       locked = true
+      // Révélation : tout le state space éclot, le jamais-exploré en gris.
+      if (mapDimmed === undefined) {
+        mapDimmed = new Set<number>()
+        for (let i = 0; i < graph.nodes.length; i++) if (!view.revealed[i]) mapDimmed.add(i)
+        view.revealCascade(at)
+        view.setStyles({
+          current: at,
+          frontier: EMPTY,
+          traceEdges: new Set(game.moves),
+          enabledEdges: EMPTY,
+          highlight: -1,
+          dimmed: mapDimmed,
+        })
+      }
       const trace = game.moves.map((e) => graph.edges[e].action)
       const medal =
         game.moves.length === graph.par
@@ -330,72 +347,62 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     glideTo(at)
   }
 
-  const editorOpts: EditorOpts = {
-    parent: hud.editorMount,
-    placeholder: 'nom d’une action activée, puis Entrée',
-    completions: () =>
-      [...enabledMoves().entries()].map(([name, e]) => ({
-        label: name,
-        type: 'function',
-        detail: level.actionsSrc.find((a) => a.name === name)?.updateSrc,
-        boost: graph.nodes[graph.edges[e].to].violating ? 1 : 0,
-      })),
-    onChange: (text) => {
-      if (locked) return
-      const name = resolve(text)
-      const e = name === null ? undefined : enabledMoves().get(name)
-      refresh(e === undefined ? -1 : graph.edges[e].to)
-    },
-    onSubmit: (text) => {
-      if (locked) return
-      const name = resolve(text)
-      const e = name === null ? undefined : enabledMoves().get(name)
-      if (e === undefined) return
-      prevState = graph.nodes[currentNode(game, graph)].state
-      game = play(game, graph, e)
-      editor.setText('')
-      // Le pas se sent : lumière le long de l'arête, flash, impulsion, tick.
-      view.travelEdge(e)
-      view.flashNode(graph.edges[e].to)
-      ctx.punch()
-      audio.tick()
-      hud.pulseAction(graph.edges[e].action)
-      refresh()
-      if (graph.nodes[graph.edges[e].to].violating) {
-        view.shockwave(graph.edges[e].to)
-        ctx.shake()
-        audio.doom()
-      }
-      document.dispatchEvent(new CustomEvent('ds:action-played'))
-    },
-    lint: (text) => (resolve(text) !== null ? null : `« ${text} » : pas une action jouable`),
+  /** Jouer une action par son bouton. Tous les effets du pas. */
+  const playByName = (name: string): void => {
+    if (locked) return
+    const e = enabledMoves().get(name)
+    if (e === undefined) return
+    prevState = graph.nodes[currentNode(game, graph)].state
+    game = play(game, graph, e)
+    // Le pas se sent : lumière le long de l'arête, flash, impulsion, tick.
+    view.travelEdge(e)
+    view.flashNode(graph.edges[e].to)
+    ctx.punch()
+    audio.tick()
+    hud.pulseAction(name)
+    refresh()
+    if (graph.nodes[graph.edges[e].to].violating) {
+      view.shockwave(graph.edges[e].to)
+      ctx.shake()
+      audio.doom()
+    }
+    document.dispatchEvent(new CustomEvent('ds:action-played'))
   }
-  const editor = new FormulaEditor(editorOpts)
-
-  refresh()
-  editor.focus()
 
   const doUndo = (): void => {
     if (!locked && game.moves.length > 0) {
       game = undo(game)
       prevState = null
       refresh()
-      editor.focus()
     }
   }
-  editorOpts.onEmptyBackspace = doUndo
+
+  // Backspace = annuler, même sans champ de saisie.
+  const keydown = (ev: KeyboardEvent): void => {
+    if (ev.key === 'Backspace' && ctx.renderer.domElement.isConnected) {
+      ev.preventDefault()
+      doUndo()
+    }
+  }
+  window.addEventListener('keydown', keydown)
+
+  refresh()
 
   return {
     onReset: () => {
       game = newGame(level.id)
       prevState = null
       locked = false
-      editor.setText('')
       refresh()
-      editor.focus()
     },
     onUndo: doUndo,
-    onInsertAction: (name) => editor.insert(name),
+    onPlayAction: playByName,
+    onHoverAction: (name) => {
+      if (locked) return
+      const e = name === null ? undefined : enabledMoves().get(name)
+      refresh(e === undefined ? -1 : graph.edges[e].to)
+    },
+    onDispose: () => window.removeEventListener('keydown', keydown),
   }
 }
 

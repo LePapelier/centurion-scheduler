@@ -45,12 +45,18 @@ export function runTour(steps: readonly TourStep[], onDone: () => void): void {
       </div>`
     bubble.querySelector('.tour-skip')!.addEventListener('click', finish)
 
-    // Position : sous l'élément visé, sinon centrée.
+    // Position : sous l'élément visé — au-dessus s'il n'y a pas la place
+    // (les cibles du bas d'écran ne doivent pas être recouvertes).
     if (target !== null) {
       const r = target.getBoundingClientRect()
       const width = 340
       bubble.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - width - 12))}px`
-      bubble.style.top = `${Math.min(r.bottom + 10, window.innerHeight - 160)}px`
+      const h = bubble.offsetHeight
+      const below = r.bottom + 10
+      bubble.style.top =
+        below + h > window.innerHeight - 12
+          ? `${Math.max(12, r.top - h - 12)}px`
+          : `${below}px`
       bubble.style.transform = ''
     } else {
       bubble.style.left = '50%'

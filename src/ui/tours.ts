@@ -8,8 +8,8 @@ import type { TourStep } from './tour'
 export const tours: Record<string, readonly TourStep[]> = {
   't1-fusible': [
     {
-      target: '.editor-mount',
-      html: 'Tapez <code>load</code> puis <b>Entrée</b>.',
+      target: '.actionbar',
+      html: 'Cliquez <code>load</code>.',
       gate: 'ds:action-played',
     },
     {
@@ -31,7 +31,7 @@ export const tours: Record<string, readonly TourStep[]> = {
       gate: 'next',
     },
     {
-      target: '.actions',
+      target: '.actionbar',
       html: 'Vos <b>actions</b>. Jouez-en une (allumée).',
       gate: 'ds:action-played',
     },

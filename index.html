@@ -46,7 +46,12 @@
       .panel .status { color: var(--muted); margin: 8px 0 0; }
       .panel .status b { color: var(--orange); }
 
-      .levels { display: flex; gap: 5px; margin-bottom: 12px; flex-wrap: wrap; }
+      .levels { display: flex; gap: 5px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+      .levels .chapter {
+        color: var(--dim); font-size: 11px; text-transform: uppercase;
+        letter-spacing: 0.08em; margin: 0 3px 0 6px;
+      }
+      .levels .chapter:first-child { margin-left: 0; }
       .levels .lvl {
         min-width: 30px; padding: 3px 0; text-align: center;
         border-radius: 5px; font-size: 12px;

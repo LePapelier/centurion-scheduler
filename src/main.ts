@@ -28,11 +28,13 @@ if (new URLSearchParams(location.search).has('reset')) {
 const app = document.getElementById('app')!
 const progress = loadProgress()
 
-/** Rayon du graphe posé (pour cadrer la caméra). */
-function graphRadius(positions: Float32Array): number {
+/** Rayon du graphe posé — restreint à un sous-ensemble de nœuds si fourni
+ *  (prove : cadrer le cœur atteignable, pas la périphérie fantôme). */
+function graphRadius(positions: Float32Array, subset?: Iterable<number>): number {
   let r = 0
-  for (let i = 0; i < positions.length; i += 3)
-    r = Math.max(r, Math.hypot(positions[i], positions[i + 1], positions[i + 2]))
+  const indices = subset ?? Array.from({ length: positions.length / 3 }, (_, i) => i)
+  for (const i of indices)
+    r = Math.max(r, Math.hypot(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]))
   return r
 }
 
@@ -183,7 +185,7 @@ function startLevel(index: number): () => void {
   const hud = new Hud(
     app,
     level,
-    levels.map((l) => ({ name: l.name, best: progress.scores[l.id] })),
+    levels.map((l) => ({ name: l.name, best: progress.scores[l.id], mode: l.mode })),
     index,
     progress.unlocked,
     {
@@ -261,6 +263,9 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   let prevState: (typeof level)['init'] | null = null
   let locked = false
 
+  const beacons = new Set<number>()
+  for (let i = 0; i < graph.nodes.length; i++) if (graph.nodes[i].violating) beacons.add(i)
+
   const enabledMoves = (): Map<string, number> => {
     const at = currentNode(game, graph)
     const map = new Map<string, number>()
@@ -298,6 +303,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       traceEdges: new Set(game.moves),
       enabledEdges: new Set(moves.values()),
       highlight: ghost,
+      beacons, // les états interdits luisent à travers le brouillard
     })
     hud.updateVars(graph.nodes[at].state, prevState)
     hud.setEnabledActions(new Set(moves.keys()))
@@ -410,7 +416,8 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), labels)
   view.revealCascade(space.init)
   audio.whoosh()
-  ctx.frameRadius(graphRadius(positions))
+  // Cadrer le cœur atteignable : la périphérie fantôme reste hors champ.
+  ctx.frameRadius(graphRadius(positions, space.reachable) * 1.25)
   attachInspection(
     ctx,
     view,

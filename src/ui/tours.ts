@@ -24,6 +24,24 @@ export const tours: Record<string, readonly TourStep[]> = {
     },
   ],
 
+  't2-mutex': [
+    {
+      target: '#app canvas',
+      html: 'Le halo : votre <b>état de départ</b>. La lueur <b>rouge</b> au loin : l’état interdit.',
+      gate: 'next',
+    },
+    {
+      target: '.actions',
+      html: 'Vos <b>actions</b>. Jouez-en une (allumée).',
+      gate: 'ds:action-played',
+    },
+    {
+      target: '.rule',
+      html: 'Trouvez la <b>séquence</b> qui mène au rouge.',
+      gate: 'next',
+    },
+  ],
+
   'p1-fusible-sur': [
     {
       target: '#app canvas',

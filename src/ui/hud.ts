@@ -20,6 +20,7 @@ export interface LevelInfo {
   readonly name: string
   /** Meilleur score enregistré, ou undefined. */
   readonly best?: number
+  readonly mode: 'trace' | 'prove'
 }
 
 export interface Brick {
@@ -121,7 +122,14 @@ export class Hud {
     root.appendChild(bar)
 
     const levelsEl = panel.querySelector('.levels')!
-    levelInfos.forEach(({ name, best }, i) => {
+    levelInfos.forEach(({ name, best, mode }, i) => {
+      // Séparation des chapitres : « casser » (trace) puis « prouver ».
+      if (i === 0 || levelInfos[i - 1].mode !== mode) {
+        const chap = document.createElement('span')
+        chap.className = 'chapter'
+        chap.textContent = mode === 'trace' ? 'casser' : 'prouver'
+        levelsEl.appendChild(chap)
+      }
       const b = document.createElement('button')
       b.className = 'lvl'
       b.textContent = String(i + 1)

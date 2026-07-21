@@ -1,9 +1,12 @@
 import { compileLevel } from '../dsl/parse'
 import fusible from './01-fusible.tla?raw'
-import mutex from './02-mutex.tla?raw'
-import fusibleSur from './03-fusible-sur.tla?raw'
-import mutexCorrige from './04-mutex-corrige.tla?raw'
-import peterson from './05-peterson.tla?raw'
+import verrous from './02-verrous.tla?raw'
+import mutex from './03-mutex.tla?raw'
+import fusibleSur from './04-fusible-sur.tla?raw'
+import mutexCorrige from './05-mutex-corrige.tla?raw'
+import peterson from './06-peterson.tla?raw'
 
-/** La campagne : l'adversaire d'abord (casser), la preuve ensuite (blinder). */
-export const levels = [fusible, mutex, fusibleSur, mutexCorrige, peterson].map(compileLevel)
+/** La campagne : chapitre « casser » (trace), puis chapitre « prouver ». */
+export const levels = [fusible, verrous, mutex, fusibleSur, mutexCorrige, peterson].map(
+  compileLevel,
+)

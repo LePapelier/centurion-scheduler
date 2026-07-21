@@ -19,6 +19,8 @@ export interface Styles {
   readonly region?: ReadonlySet<number>
   /** Contre-exemples à l'induction : transitions qui s'échappent de la région. */
   readonly ctiEdges?: ReadonlySet<number>
+  /** États non révélés mais visibles en balise (trace : les cibles rouges luisent à travers le brouillard). */
+  readonly beacons?: ReadonlySet<number>
 }
 
 const NODE_RADIUS = 0.32
@@ -458,7 +460,11 @@ export class GraphView {
     const labelUp = this.tmpA.copy(UP).applyQuaternion(camera.quaternion).multiplyScalar(0.58)
 
     for (let i = 0; i < graph.nodes.length; i++) {
-      let s = this.revealed[i] ? this.revealScale[i] : 0
+      let s = this.revealed[i]
+        ? this.revealScale[i]
+        : this.styles.beacons?.has(i) === true
+          ? 0.45 + 0.1 * Math.sin(time * 0.003 + i) // balise : lueur qui respire
+          : 0
       if (i === this.styles.current) s *= 1.35
       else if (this.styles.frontier.has(i)) s *= 1 + 0.13 * Math.sin(time * 0.005 + i * 1.7)
       if (i === this.styles.highlight) s *= 1.25

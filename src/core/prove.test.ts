@@ -8,8 +8,8 @@ import { checkCandidate, impliesGoal, usedBricks } from './prove'
 const byId = (id: string) => levels.find((l) => l.id === id)!
 
 describe('campagne', () => {
-  it('6 niveaux, prouvables ou violables selon le mode', () => {
-    expect(levels.length).toBe(6)
+  it('8 niveaux, prouvables ou violables selon le mode', () => {
+    expect(levels.length).toBe(8)
     for (const l of levels) {
       if (l.mode === 'trace') expect(explore(l).par).toBeGreaterThan(0)
       else expect(explore(l).nodes.some((n) => n.violating)).toBe(false) // sûr : rien à violer

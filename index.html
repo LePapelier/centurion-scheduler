@@ -146,7 +146,13 @@
       .chip.action.played { animation: chip-tick 0.45s ease-out; }
 
       .rule { margin-top: 10px; padding: 5px 10px; border-radius: 6px; color: var(--muted); border: 1px solid transparent; }
-      .rule .rule-icon { color: var(--cyan); margin-right: 6px; }
+      .rule .rule-tag {
+        display: inline-block; margin-right: 8px; padding: 0 7px;
+        border-radius: 4px; font-size: 11px; text-transform: uppercase;
+        letter-spacing: 0.05em; font-weight: 600;
+      }
+      .rule.break .rule-tag { color: var(--pink); border: 1px solid rgba(255, 107, 157, 0.5); }
+      .rule.prove .rule-tag { color: var(--green); border: 1px solid rgba(129, 201, 149, 0.5); }
       .rule.violated {
         border-color: rgba(255, 107, 157, 0.6);
         background:

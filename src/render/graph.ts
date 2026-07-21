@@ -22,7 +22,6 @@ export interface Styles {
 }
 
 const NODE_RADIUS = 0.32
-const RING_INNER = 0.58 // rapport rayon intérieur / extérieur (identité portfolio)
 const ARROW_LEN = 0.16
 const EDGE_INSET = 0.4 // marge entre la ligne et le centre d'un nœud
 const UP = new THREE.Vector3(0, 1, 0)
@@ -90,7 +89,6 @@ export class GraphView {
   private readonly labelTexts: readonly string[]
 
   private readonly nodesMesh: THREE.InstancedMesh
-  private readonly pickMesh: THREE.InstancedMesh // disques invisibles : le pick ignore le trou des anneaux
   private readonly arrowsMesh: THREE.InstancedMesh
   private readonly edgeGeom: THREE.BufferGeometry
   private readonly edgePos: Float32Array
@@ -131,24 +129,18 @@ export class GraphView {
     this.labels = new Array(n).fill(null)
 
     this.nodesMesh = new THREE.InstancedMesh(
-      new THREE.RingGeometry(NODE_RADIUS * RING_INNER, NODE_RADIUS, 40),
-      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
+      new THREE.IcosahedronGeometry(NODE_RADIUS, 2),
+      new THREE.MeshLambertMaterial(),
       n,
     )
     this.nodesMesh.frustumCulled = false
     for (let i = 0; i < n; i++) this.nodesMesh.setColorAt(i, nodeColors[i])
     ctx.scene.add(this.nodesMesh)
 
-    // Même matrices que les anneaux, mais plein : cliquer le centre marche.
-    this.pickMesh = new THREE.InstancedMesh(
-      new THREE.CircleGeometry(NODE_RADIUS * 1.15, 16),
-      new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }),
-      n,
-    )
-    this.pickMesh.instanceMatrix = this.nodesMesh.instanceMatrix
-    this.pickMesh.visible = false
-    this.pickMesh.frustumCulled = false
-    ctx.scene.add(this.pickMesh)
+    ctx.scene.add(new THREE.AmbientLight(0xffffff, 0.8))
+    const sun = new THREE.DirectionalLight(0xffffff, 1.1)
+    sun.position.set(5, 8, 6)
+    ctx.scene.add(sun)
 
     this.edgePos = new Float32Array(graph.edges.length * 6)
     this.edgeGeom = new THREE.BufferGeometry()
@@ -322,9 +314,9 @@ export class GraphView {
   pick(ndc: THREE.Vector2): number | null {
     // three fige la sphère englobante au premier raycast ; si celui-ci part
     // avant la première frame (matrices identité), tout pick rate ensuite.
-    this.pickMesh.computeBoundingSphere()
+    this.nodesMesh.computeBoundingSphere()
     this.raycaster.setFromCamera(ndc, this.ctx.camera)
-    for (const hit of this.raycaster.intersectObject(this.pickMesh)) {
+    for (const hit of this.raycaster.intersectObject(this.nodesMesh)) {
       const i = hit.instanceId
       if (i !== undefined && this.revealed[i] && this.revealScale[i] > 0.5) return i
     }
@@ -345,7 +337,6 @@ export class GraphView {
       if (this.styles.dimmed?.has(i)) s *= 0.55
       if (i === this.selected) s *= 1.3
       dummy.position.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
-      dummy.quaternion.copy(camera.quaternion) // anneaux billboardés (identité portfolio)
       dummy.scale.setScalar(Math.max(s, 1e-4))
       dummy.updateMatrix()
       this.nodesMesh.setMatrixAt(i, dummy.matrix)

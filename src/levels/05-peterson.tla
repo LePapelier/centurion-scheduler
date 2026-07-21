@@ -1,9 +1,8 @@
 LEVEL p3-peterson
 NAME Peterson
 MODE prove
-DESC L'algorithme de Peterson : drapeaux + tour de politesse. Le sommet de la campagne — prouvez son exclusion mutuelle.
-TUTORIAL Deux briques données, F0 et F1 : les drapeaux suivent les pc. Elles ne suffisent pas — il manque ce que turn garantit à celui qui est en "crit" pendant que l'autre est en "wait".
-GOAL Prouvez l'INVARIANT en nommant vos briques (F0 et F1 se réutilisent par leur nom).
+DESC Peterson : drapeaux + tour de politesse. Le boss.
+GOAL Prouvez la règle avec F0 et F1.
 
 VARIABLES
   pc0 ∈ {"idle", "want", "wait", "crit"} = "idle"

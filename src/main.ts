@@ -11,6 +11,7 @@ import { levels } from './levels'
 import { GraphView } from './render/graph'
 import { color } from './render/palette'
 import { SceneCtx } from './render/scene'
+import { audio } from './ui/audio'
 import { loadProgress, recordScore, saveProgress, unlock } from './ui/campaign'
 import { FormulaEditor, OPERATOR_COMPLETIONS, type EditorOpts } from './ui/editor'
 import { hl, hlValue } from './ui/highlight'
@@ -158,6 +159,7 @@ function startLevel(index: number): () => void {
   let pendingWin: (() => void) | null = null
 
   const win = (score: number, title: string, body: string): void => {
+    audio.chime()
     const previousBest = progress.scores[level.id]
     recordScore(progress, level.id, score)
     unlock(progress, Math.min(index + 1, levels.length - 1))
@@ -187,6 +189,9 @@ function startLevel(index: number): () => void {
       onSelectLevel: loadLevel,
       onNext: () => loadLevel(index + 1),
       onDeleteBrick: (name) => modeHooks.onDeleteBrick?.(name),
+      onInsertAction: (name) => modeHooks.onInsertAction?.(name),
+      onToggleAudio: () => audio.toggle(),
+      audioEnabled: () => audio.enabled,
     },
   )
 
@@ -222,6 +227,7 @@ interface ModeHooks {
   onReset(): void
   onUndo?(): void
   onDeleteBrick?(name: string): void
+  onInsertAction?(name: string): void
 }
 
 type Win = (score: number, title: string, body: string) => void
@@ -301,7 +307,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
           : `optimum : ${graph.par} coups`
       win(
         game.moves.length,
-        'Invariant violé',
+        'Règle brisée',
         `<p>${trace.join(' → ')}</p><p><b>${game.moves.length}</b> coups — ${medal}</p>`,
       )
     } else if (moves.size === 0) {
@@ -336,11 +342,21 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       prevState = graph.nodes[currentNode(game, graph)].state
       game = play(game, graph, e)
       editor.setText('')
+      // Le pas se sent : lumière le long de l'arête, flash, impulsion, tick.
+      view.travelEdge(e)
+      view.flashNode(graph.edges[e].to)
+      ctx.punch()
+      audio.tick()
+      hud.pulseAction(graph.edges[e].action)
       refresh()
+      if (graph.nodes[graph.edges[e].to].violating) {
+        view.shockwave(graph.edges[e].to)
+        ctx.shake()
+        audio.doom()
+      }
       document.dispatchEvent(new CustomEvent('ds:action-played'))
     },
-    lint: (text) =>
-      resolve(text) !== null ? null : `« ${text} » : pas une action activée (Ctrl-Espace pour la liste)`,
+    lint: (text) => (resolve(text) !== null ? null : `« ${text} » : pas une action jouable`),
   }
   const editor = new FormulaEditor(editorOpts)
 
@@ -367,6 +383,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       editor.focus()
     },
     onUndo: doUndo,
+    onInsertAction: (name) => editor.insert(name),
   }
 }
 
@@ -386,6 +403,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   const labels = nodeLabels(level, graph)
   const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), labels)
   view.revealCascade(space.init)
+  audio.whoosh()
   ctx.frameRadius(graphRadius(positions))
   attachInspection(
     ctx,
@@ -426,15 +444,20 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     given: true,
   }))
   let locked = false
+  let lastRegionKey = ''
+  let aliasUsedFired = false
 
   /** Alias : chaque brique est réutilisable par son nom dans les formules. */
   const aliases = (): Map<string, Expr> => new Map(bricks.map((b) => [b.name, b.expr]))
 
-  /** Une brique est supprimable si aucune autre ne mentionne son nom. */
+  /** Une brique est supprimable si aucune autre ne mentionne son nom.
+   *  (Gating : le ✕ n'apparaît qu'à partir du niveau des alias.) */
+  const allowDelete = level.id !== 'p1-fusible-sur'
   const decorated = (): Brick[] =>
     bricks.map((b) => ({
       ...b,
       deletable:
+        allowDelete &&
         !locked &&
         !b.given &&
         !bricks.some(
@@ -473,7 +496,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   const refreshGoal = (): boolean => {
     const proved = impliesGoal(space, bricks.map((b) => b.expr), goal)
     hud.setGoalStatus(
-      `objectif : vos briques impliquent l'INVARIANT — ${proved ? '<b>OUI ✓</b>' : 'pas encore'}`,
+      `vos briques garantissent la règle — ${proved ? '<b>OUI ✓</b>' : 'pas encore'}`,
       proved,
     )
     return proved
@@ -483,7 +506,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     view.setStyles(baseStyles)
     hud.setFailingActions(EMPTY as unknown as Set<string>)
     hud.setStatus(
-      `espace complet : <b>${graph.nodes.length}</b> états, dont <b>${space.reachable.size}</b> atteignables — les fantômes sont assombris`,
+      `<b>${graph.nodes.length}</b> états, <b>${space.reachable.size}</b> atteignables — fantômes assombris`,
     )
   }
 
@@ -507,16 +530,22 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     })
     const failing = new Set(report.ctis.map((e) => graph.edges[e].action))
     hud.setFailingActions(failing)
+    // Balayage quand la région change de forme (pas à chaque frappe).
+    const regionKey = `${report.region.size}:${report.ctis.length}`
+    if (regionKey !== lastRegionKey) {
+      lastRegionKey = regionKey
+      view.sweep(report.region, space.init)
+    }
     if (!report.initOk) {
-      hud.setStatus(`l'état initial est <b>hors</b> de la région — une brique doit le contenir`)
+      hud.setStatus(`l'état initial <b>échappe</b> à votre formule`)
     } else if (report.ctis.length > 0) {
       const e = graph.edges[report.ctis[0]]
       hud.setStatus(
-        `<b>${report.ctis.length}</b> CTI — ex. <b>${e.action}</b> : ${labels[e.from]} → ${labels[e.to]}`,
+        `<b>${report.ctis.length}</b> fuite${report.ctis.length > 1 ? 's' : ''} — <b>${e.action}</b> : ${labels[e.from]} → ${labels[e.to]}`,
       )
       document.dispatchEvent(new CustomEvent('ds:cti-shown'))
     } else {
-      hud.setStatus(`inductive ✓ — Entrée pour en faire une brique`)
+      hud.setStatus(`aucune fuite ✓ — Entrée : poser la brique`)
     }
     return report
   }
@@ -529,7 +558,12 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       ...formulaCompletions(level),
     ],
     onChange: (text) => {
-      if (!locked) preview(text)
+      if (locked) return
+      preview(text)
+      if (!aliasUsedFired && bricks.some((b) => new RegExp(`(^|[^A-Za-z0-9_])${b.name}([^A-Za-z0-9_]|$)`).test(text))) {
+        aliasUsedFired = true
+        document.dispatchEvent(new CustomEvent('ds:alias-used'))
+      }
     },
     onSubmit: (text) => {
       if (locked || text === '') return
@@ -544,6 +578,8 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
         deps: bricks.filter((_, i) => used[i]).map((b) => b.name),
         given: false,
       }]
+      hud.flyToBricks(`□ ${hl(src)}`)
+      audio.impact()
       hud.renderBricks(decorated())
       editor.setText('')
       idle()
@@ -572,10 +608,17 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
         const score = useful.reduce((n, b) => n + countTokens(b.src), 0)
         const wall = useful.map((b) => `□ ${b.name} ≜ ${hl(b.src)}`).join('<br>')
         const extra = bricks.filter((b) => !b.given).length - useful.length
-        win(
-          score,
-          'Invariant prouvé',
-          `<p class="formula">${wall}</p><p><b>${useful.length}</b> briques utiles, <b>${score}</b> tokens${extra > 0 ? ` (${extra} brique${extra > 1 ? 's' : ''} hors preuve, non comptée${extra > 1 ? 's' : ''})` : ''}</p>`,
+        // Vague sur les états atteignables, puis la victoire.
+        view.sweep(space.reachable, space.init)
+        audio.whoosh()
+        window.setTimeout(
+          () =>
+            win(
+              score,
+              'Règle garantie',
+              `<p class="formula">${wall}</p><p><b>${useful.length}</b> briques utiles, <b>${score}</b> tokens${extra > 0 ? ` (${extra} brique${extra > 1 ? 's' : ''} hors preuve, non comptée${extra > 1 ? 's' : ''})` : ''}</p>`,
+            ),
+          700,
         )
       }
     },
@@ -615,6 +658,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       preview(editor.getText())
       editor.focus()
     },
+    onInsertAction: (name) => editor.insert(name),
   }
 }
 

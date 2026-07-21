@@ -1,8 +1,8 @@
 LEVEL p1-fusible-sur
 NAME Le fusible blindé
 MODE prove
-DESC Le circuit corrigé : la garde de load s'arrête un cran plus tôt. Cette fois le fusible ne PEUT pas sauter — prouvez-le.
-GOAL Prouvez l'INVARIANT par induction.
+DESC Le circuit corrigé ne peut plus sauter. Prouvez-le.
+GOAL Prouvez la règle.
 
 VARIABLES
   charge ∈ {0, 1, 2, 3} = 0

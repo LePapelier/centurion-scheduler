@@ -1,10 +1,8 @@
 LEVEL p2-mutex-corrige
 NAME Le mutex corrigé
 MODE prove
-DESC Le mutex du niveau 2, corrigé : l'entrée re-vérifie le drapeau adverse. Vous l'avez cassé — prouvez maintenant que celui-ci tient.
-TUTORIAL Tapez l'invariant tel quel : des états fantômes (assombris) s'en échappent — il n'est pas inductif seul. La brique donnée C0 interdit les fantômes absurdes du processus 0 ; il manque la miroir côté processus 1.
-TUTORIAL Une brique se nomme : « C1 ≜ votre formule ». Son nom se réutilise ensuite tel quel — inutile de retaper C0.
-GOAL Prouvez l'INVARIANT : une brique miroir C1, puis lui.
+DESC Le mutex corrigé tient. Prouvez-le.
+GOAL Une brique miroir C1, puis la règle.
 
 VARIABLES
   pc0 ∈ {"idle", "ready", "crit"} = "idle"

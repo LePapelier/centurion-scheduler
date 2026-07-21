@@ -100,6 +100,34 @@ export class SceneCtx {
     this.tweens.push({ t0: performance.now(), tween })
   }
 
+  /** Impulsion caméra brève (un pas est joué). */
+  punch(): void {
+    const start = this.camera.position.clone()
+    this.addTween({
+      dur: 160,
+      step: (k) => {
+        this.camera.position.lerpVectors(start, this.controls.target, 0.03 * Math.sin(k * Math.PI))
+      },
+    })
+  }
+
+  /** Secousse courte de la cible caméra (violation). */
+  shake(amplitude = 0.35): void {
+    const base = this.controls.target.clone()
+    this.addTween({
+      dur: 320,
+      step: (k) => {
+        const a = amplitude * (1 - k)
+        this.controls.target.set(
+          base.x + (Math.random() - 0.5) * a,
+          base.y + (Math.random() - 0.5) * a,
+          base.z + (Math.random() - 0.5) * a,
+        )
+      },
+      done: () => this.controls.target.copy(base),
+    })
+  }
+
   /** Cadre la caméra sur un graphe de rayon donné. */
   frameRadius(radius: number): void {
     const d = Math.max(radius * 1.85 + 5, 12)

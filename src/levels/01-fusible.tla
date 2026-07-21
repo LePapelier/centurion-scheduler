@@ -1,7 +1,7 @@
 LEVEL t1-fusible
 NAME Le fusible
 MODE trace
-DESC Un circuit encaisse des charges. Trop de charge et le fusible saute.
+DESC Trop de charge et le fusible saute.
 GOAL Faites sauter le fusible.
 
 VARIABLES

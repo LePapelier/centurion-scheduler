@@ -9,6 +9,11 @@ export interface HudCallbacks {
   onNext(): void
   /** Suppression d'une brique par son nom (mode prove). */
   onDeleteBrick?(name: string): void
+  /** Clic sur un jeton d'action : insérer son nom dans l'éditeur. */
+  onInsertAction?(name: string): void
+  /** Bascule du son ; retourne le nouvel état. */
+  onToggleAudio?(): boolean
+  audioEnabled?(): boolean
 }
 
 export interface LevelInfo {
@@ -48,6 +53,7 @@ export class Hud {
   private readonly nextBtn: HTMLButtonElement
   private inspectorEl: HTMLElement
   private readonly cb: HudCallbacks
+  private popoverEl!: HTMLElement
   private victoryKeyTimer: number | null = null
   private readonly victoryKeyHandler = (ev: KeyboardEvent): void => {
     if (ev.key !== 'Enter' || !this.victoryEl.isConnected) return
@@ -80,12 +86,16 @@ export class Hud {
       ${level.tutorial.map((t) => `<p class="tutorial">${t}</p>`).join('')}
       ${level.goal !== '' ? `<p class="goal">▸ ${level.goal}</p>` : ''}
       <div class="spec">
-        <div class="kw">VARIABLES</div>
-        <div class="vars"></div>
-        <div class="actions"></div>
-        <div class="inv"><span class="kw">INVARIANT</span> <span class="src">${hl(level.invariantSrc)}</span></div>
+        <div class="chips vars"></div>
+        <div class="chips actions"></div>
+        <div class="rule"><span class="rule-icon">◈</span> <span class="src">${hl(level.invariantSrc)}</span></div>
       </div>`
     root.appendChild(panel)
+
+    // Popover partagé : définition complète d'une action au survol de son jeton.
+    this.popoverEl = document.createElement('div')
+    this.popoverEl.className = 'popover hidden'
+    root.appendChild(this.popoverEl)
 
     // Barre de commande : saisie, briques et feedback, centrées en bas.
     const bar = document.createElement('div')
@@ -121,25 +131,46 @@ export class Hud {
       b.addEventListener('click', () => cb.onSelectLevel(i))
       levelsEl.appendChild(b)
     })
+    if (cb.onToggleAudio !== undefined) {
+      const snd = document.createElement('button')
+      snd.className = 'lvl sound'
+      snd.textContent = cb.audioEnabled?.() === false ? '🔇' : '🔊'
+      snd.title = 'son'
+      snd.addEventListener('click', () => {
+        snd.textContent = cb.onToggleAudio!() ? '🔊' : '🔇'
+      })
+      levelsEl.appendChild(snd)
+    }
 
     const varsEl = panel.querySelector('.vars')!
     for (const v of Object.keys(level.init)) {
       const el = document.createElement('span')
-      el.className = 'var'
+      el.className = 'chip var'
       varsEl.appendChild(el)
       this.varEls.set(v, el)
     }
 
     const actionsEl = panel.querySelector('.actions')!
     for (const a of level.actionsSrc) {
-      const el = document.createElement('div')
-      el.className = 'action'
-      el.innerHTML = `<span class="kw">ACTION</span> <span class="aname">${a.name}</span> ≜ <span class="guard">${hl(a.guardSrc)}</span> <span class="arrow">→</span> <span class="upd">${hl(a.updateSrc)}</span>`
+      const el = document.createElement('button')
+      el.className = 'chip action'
+      el.textContent = a.name
+      el.addEventListener('click', () => {
+        if (el.classList.contains('enabled') || level.mode === 'prove') cb.onInsertAction?.(a.name)
+      })
+      el.addEventListener('mouseenter', () => {
+        this.popoverEl.innerHTML = `<span class="kw">ACTION</span> <span class="aname">${a.name}</span> ≜ ${hl(a.guardSrc)} <span class="arrow">→</span> ${hl(a.updateSrc)}`
+        this.popoverEl.classList.remove('hidden')
+        const r = el.getBoundingClientRect()
+        this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 380)}px`
+        this.popoverEl.style.top = `${r.bottom + 6}px`
+      })
+      el.addEventListener('mouseleave', () => this.popoverEl.classList.add('hidden'))
       actionsEl.appendChild(el)
       this.actionEls.set(a.name, el)
     }
 
-    this.invEl = panel.querySelector('.inv')
+    this.invEl = panel.querySelector('.rule')
     this.bricksEl = bar.querySelector('.bricks-list')
     this.goalEl = bar.querySelector('.goal-status')
     this.movesEl = bar.querySelector('.moves')!
@@ -174,13 +205,28 @@ export class Hud {
 
   updateVars(state: State, prevState: State | null): void {
     for (const [name, el] of this.varEls) {
-      el.innerHTML = `<span class="hl-var">${name}</span> <span class="hl-op">=</span> <b>${hlValue(state[name])}</b>`
-      el.classList.toggle('changed', prevState !== null && prevState[name] !== state[name])
+      el.innerHTML = `<span class="hl-var">${name}</span><span class="hl-op">=</span>${hlValue(state[name])}`
+      const changed = prevState !== null && prevState[name] !== state[name]
+      el.classList.remove('changed')
+      if (changed) {
+        // Redémarre l'animation de tick même si la classe était déjà posée.
+        void el.offsetWidth
+        el.classList.add('changed')
+      }
     }
   }
 
   setEnabledActions(names: ReadonlySet<string>): void {
     for (const [name, el] of this.actionEls) el.classList.toggle('enabled', names.has(name))
+  }
+
+  /** Fait « tiquer » le jeton d'une action qui vient d'être jouée. */
+  pulseAction(name: string): void {
+    const el = this.actionEls.get(name)
+    if (el === undefined) return
+    el.classList.remove('played')
+    void el.offsetWidth
+    el.classList.add('played')
   }
 
   /** Surligne les actions fautives (sources de CTI). */
@@ -232,6 +278,24 @@ export class Hud {
     this.traceEl.innerHTML = names
       .map((a) => `<span class="step">${a}</span>`)
       .join('<span class="arrow">→</span>')
+  }
+
+  /** La formule prouvée vole de l'éditeur vers le mur de briques. */
+  flyToBricks(html: string): void {
+    if (this.bricksEl === null) return
+    const from = this.editorMount.getBoundingClientRect()
+    const to = this.bricksEl.getBoundingClientRect()
+    const fly = document.createElement('div')
+    fly.className = 'fly'
+    fly.innerHTML = html
+    fly.style.left = `${from.left + 8}px`
+    fly.style.top = `${from.top}px`
+    document.body.appendChild(fly)
+    requestAnimationFrame(() => {
+      fly.style.transform = `translate(${to.left - from.left}px, ${to.bottom - 16 - from.top}px) scale(0.85)`
+      fly.style.opacity = '0.15'
+    })
+    window.setTimeout(() => fly.remove(), 500)
   }
 
   /** Fenêtre d'inspection d'un état, près du point cliqué. */

@@ -191,6 +191,12 @@ export class FormulaEditor {
     this.view.dispatch({ changes: { from: 0, to: this.view.state.doc.length, insert: text } })
   }
 
+  /** Insère au curseur (clic sur un jeton d'action ou de brique). */
+  insert(text: string): void {
+    this.view.dispatch(this.view.state.replaceSelection(text))
+    this.view.focus()
+  }
+
   focus(): void {
     this.view.focus()
   }

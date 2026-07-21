@@ -1,9 +1,8 @@
 LEVEL t2-mutex
 NAME Mutex naïf
 MODE trace
-DESC Deux processus protègent leur section critique par un drapeau — mais chacun teste le drapeau de l'autre AVANT de lever le sien.
-TUTORIAL Deux processus s'entrelacent : à chaque pas, VOUS choisissez qui avance. Un ordonnancement malveillant suffit à casser un protocole faux — c'est ce que vous allez faire.
-GOAL Faites entrer les deux processus en section critique en même temps.
+DESC Deux processus, un seul droit d’entrée — en principe.
+GOAL Faites-les entrer tous les deux en « crit ».
 
 VARIABLES
   pc0 ∈ {"idle", "ready", "crit"} = "idle"

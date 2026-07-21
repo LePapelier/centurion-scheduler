@@ -29,6 +29,19 @@ const UP = new THREE.Vector3(0, 1, 0)
 /** Au-delà de ce nombre de nœuds, seuls les états atteignables (et la sélection) gardent leur étiquette. */
 const LABEL_DENSITY_LIMIT = 30
 
+function ringTexture(): THREE.Texture {
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const g = canvas.getContext('2d')!
+  g.strokeStyle = 'rgba(255,255,255,0.9)'
+  g.lineWidth = 7
+  g.beginPath()
+  g.arc(size / 2, size / 2, size / 2 - 6, 0, Math.PI * 2)
+  g.stroke()
+  return new THREE.CanvasTexture(canvas)
+}
+
 function haloTexture(): THREE.Texture {
   const size = 128
   const canvas = document.createElement('canvas')
@@ -104,6 +117,12 @@ export class GraphView {
   }
   private selected: number | null = null
   private readonly edgeLabels = new Map<number, THREE.Sprite>()
+  /** Flash par nœud : timestamp (ms) de départ, possiblement futur (sweep). */
+  private readonly flashT: Float32Array
+  /** Pulses circulant sur les arêtes CTI. */
+  private ctiList: number[] = []
+  private readonly ctiMovers: THREE.Sprite[] = []
+  private readonly softTexture = haloTexture()
   private readonly dummy = new THREE.Object3D()
   private readonly raycaster = new THREE.Raycaster()
   private readonly tmpColor = new THREE.Color()
@@ -128,6 +147,7 @@ export class GraphView {
     this.revealScale = new Float32Array(n)
     this.revealed = new Array(n).fill(false)
     this.labels = new Array(n).fill(null)
+    this.flashT = new Float32Array(n).fill(-1e9)
 
     // Sphères néon : couleur pleine non éclairée + lueur additive billboardée.
     this.nodesMesh = new THREE.InstancedMesh(
@@ -257,6 +277,83 @@ export class GraphView {
     }
   }
 
+  /** Flash bref d'un nœud (pas joué, arrivée). */
+  flashNode(i: number): void {
+    this.flashT[i] = performance.now()
+  }
+
+  /** Balayage : les nœuds de l'ensemble flashent en s'éloignant de l'origine. */
+  sweep(nodes: Iterable<number>, origin: number): void {
+    const now = performance.now()
+    const ox = this.display[origin * 3]
+    const oy = this.display[origin * 3 + 1]
+    const oz = this.display[origin * 3 + 2]
+    let maxDist = 1e-6
+    const list = [...nodes]
+    const dists = list.map((i) =>
+      Math.hypot(this.display[i * 3] - ox, this.display[i * 3 + 1] - oy, this.display[i * 3 + 2] - oz),
+    )
+    for (const d of dists) maxDist = Math.max(maxDist, d)
+    list.forEach((i, k) => (this.flashT[i] = now + (dists[k] / maxDist) * 450))
+  }
+
+  /** Lumière voyageant le long d'une arête (pas joué). */
+  travelEdge(e: number, tint: THREE.Color = color.edgeAccent): void {
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.softTexture,
+        color: tint,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+      }),
+    )
+    sprite.scale.setScalar(0.75)
+    this.ctx.scene.add(sprite)
+    const { from, to } = this.graph.edges[e]
+    this.ctx.addTween({
+      dur: 280,
+      step: (k) => {
+        sprite.position.set(
+          this.display[from * 3] + (this.display[to * 3] - this.display[from * 3]) * k,
+          this.display[from * 3 + 1] + (this.display[to * 3 + 1] - this.display[from * 3 + 1]) * k,
+          this.display[from * 3 + 2] + (this.display[to * 3 + 2] - this.display[from * 3 + 2]) * k,
+        )
+      },
+      done: () => {
+        sprite.removeFromParent()
+        sprite.material.dispose()
+      },
+    })
+  }
+
+  /** Onde de choc (violation atteinte). */
+  shockwave(i: number, tint: THREE.Color = color.violating): void {
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: ringTexture(),
+        color: tint,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+      }),
+    )
+    sprite.position.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
+    this.ctx.scene.add(sprite)
+    this.ctx.addTween({
+      dur: 600,
+      step: (k) => {
+        sprite.scale.setScalar(0.5 + k * 7)
+        sprite.material.opacity = 0.9 * (1 - k)
+      },
+      done: () => {
+        sprite.removeFromParent()
+        sprite.material.map?.dispose()
+        sprite.material.dispose()
+      },
+    })
+  }
+
   /** Sélectionne un nœud : surlignage + étiquettes d'action sur ses flèches sortantes. */
   setSelected(i: number | null): void {
     this.selected = i
@@ -283,6 +380,23 @@ export class GraphView {
 
   setStyles(styles: Styles): void {
     this.styles = styles
+    // Pool de pulses circulant sur les arêtes CTI (plafonné).
+    this.ctiList = [...(styles.ctiEdges ?? [])].slice(0, 24)
+    while (this.ctiMovers.length < this.ctiList.length) {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: this.softTexture,
+          color: color.edgeCti,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          transparent: true,
+        }),
+      )
+      sprite.scale.setScalar(0.55)
+      this.ctx.scene.add(sprite)
+      this.ctiMovers.push(sprite)
+    }
+    this.ctiMovers.forEach((s, k) => (s.visible = k < this.ctiList.length))
     this.applyStyles()
   }
 
@@ -350,6 +464,8 @@ export class GraphView {
       if (i === this.styles.highlight) s *= 1.25
       if (this.styles.dimmed?.has(i)) s *= 0.55
       if (i === this.selected) s *= 1.3
+      const flashDt = time - this.flashT[i]
+      if (flashDt > 0 && flashDt < 350) s *= 1 + 0.5 * (1 - flashDt / 350)
       dummy.position.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
       dummy.quaternion.identity()
       dummy.scale.setScalar(Math.max(s, 1e-4))
@@ -438,6 +554,18 @@ export class GraphView {
       edgeColors.needsUpdate = true
       this.arrowsMesh.instanceColor!.needsUpdate = true
     }
+
+    // Pulses des fuites : petites lumières roses circulant sur les arêtes CTI.
+    this.ctiMovers.forEach((sprite, k) => {
+      if (k >= this.ctiList.length) return
+      const { from, to } = graph.edges[this.ctiList[k]]
+      const t = (time * 0.0012 + k * 0.37) % 1
+      sprite.position.set(
+        this.display[from * 3] + (this.display[to * 3] - this.display[from * 3]) * t,
+        this.display[from * 3 + 1] + (this.display[to * 3 + 1] - this.display[from * 3 + 1]) * t,
+        this.display[from * 3 + 2] + (this.display[to * 3 + 2] - this.display[from * 3 + 2]) * t,
+      )
+    })
 
     const cur = this.styles.current
     this.halo.visible = cur !== null

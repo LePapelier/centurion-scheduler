@@ -87,36 +87,70 @@
       .editor-mount:empty { display: none; }
       .formula { color: var(--gold); }
 
-      .spec { border-top: 1px solid var(--border); padding-top: 10px; }
-      .spec .kw { color: var(--cyan); font-weight: 600; }
-      .spec .vars { margin: 4px 0 10px; padding-left: 14px; }
-      .spec .var { display: inline-block; margin-right: 14px; color: var(--muted); }
-      .spec .var b { color: var(--body); font-weight: 600; }
-      .spec .var.changed b { color: var(--orange); }
-      .spec .var.changed b .hl-num, .spec .var.changed b .hl-str { color: var(--orange); }
-      .spec .action {
-        padding: 2px 6px 2px 2.4em; margin: 1px -6px; border-radius: 5px;
-        color: var(--dim); text-indent: -2.05em; transition: background 0.12s;
-      }
-      .spec .action .kw { color: var(--dim); }
       /* Coloration par token (cohérente avec l'éditeur). */
       .hl-var { color: #78b8ff; }
       .hl-num { color: #f7dc6f; }
       .hl-str { color: #81c995; }
       .hl-op { color: #aa96da; }
       .hl-punct { color: var(--muted); }
-      /* Actions désactivées : on estompe sans écraser les couleurs des tokens. */
-      .spec .action { opacity: 0.4; }
-      .spec .action.enabled, .spec .action.failing { opacity: 1; }
 
-      .spec .action.enabled { color: var(--body); cursor: pointer; }
-      .spec .action.enabled .kw { color: var(--cyan); }
-      .spec .action.enabled .aname { color: var(--orange); font-weight: 600; }
-      .spec .action.enabled:hover, .spec .action.hovered { background: var(--hover); }
-      .spec .action.failing { background: rgba(255, 107, 157, 0.1); color: var(--body); }
-      .spec .action.failing .aname { color: var(--pink); font-weight: 600; }
-      .spec .inv { margin-top: 10px; color: var(--muted); }
-      .spec .inv.violated .src { color: var(--pink); font-weight: 600; }
+      .spec { border-top: 1px solid var(--border); padding-top: 10px; }
+      .spec .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+      .chip {
+        display: inline-flex; align-items: center; gap: 3px;
+        padding: 2px 9px; border-radius: 999px; font: inherit;
+        background: #0d1526; border: 1px solid var(--border); color: var(--muted);
+      }
+      .chip.var { gap: 1px; }
+      .chip.var.changed { animation: chip-tick 0.45s ease-out; }
+      @keyframes chip-tick {
+        0% { transform: scale(1.18); border-color: var(--orange); box-shadow: 0 0 12px rgba(255, 179, 71, 0.5); }
+        100% { transform: none; }
+      }
+      .chip.action { opacity: 0.38; cursor: default; transition: opacity 0.15s, border-color 0.15s; }
+      .chip.action.enabled {
+        opacity: 1; cursor: pointer; color: var(--orange);
+        border-color: rgba(255, 179, 71, 0.55); box-shadow: 0 0 10px rgba(255, 179, 71, 0.14);
+      }
+      .chip.action.enabled:hover { background: var(--hover); }
+      .chip.action.failing {
+        opacity: 1; color: var(--pink);
+        border-color: rgba(255, 107, 157, 0.6); box-shadow: 0 0 10px rgba(255, 107, 157, 0.2);
+      }
+      .chip.action.played { animation: chip-tick 0.45s ease-out; }
+
+      .rule { margin-top: 10px; padding: 5px 10px; border-radius: 6px; color: var(--muted); border: 1px solid transparent; }
+      .rule .rule-icon { color: var(--cyan); margin-right: 6px; }
+      .rule.violated {
+        border-color: rgba(255, 107, 157, 0.6);
+        background:
+          linear-gradient(105deg, transparent 42%, rgba(255, 107, 157, 0.25) 43%, transparent 45%),
+          linear-gradient(75deg, transparent 60%, rgba(255, 107, 157, 0.22) 61%, transparent 63%),
+          rgba(255, 107, 157, 0.06);
+        animation: rule-crack 0.4s ease-out;
+      }
+      .rule.violated .rule-icon { color: var(--pink); }
+      @keyframes rule-crack {
+        0%, 60% { transform: translateX(0); }
+        10% { transform: translateX(-3px); }
+        25% { transform: translateX(3px); }
+        40% { transform: translateX(-2px); }
+      }
+
+      .popover {
+        position: fixed; z-index: 80; max-width: 370px;
+        background: rgba(7, 11, 20, 0.97); border: 1px solid var(--border);
+        border-radius: 8px; padding: 7px 11px; pointer-events: none;
+        box-shadow: 0 6px 30px rgba(0, 0, 0, 0.55);
+      }
+      .popover .kw { color: var(--cyan); font-weight: 600; }
+      .popover .aname { color: var(--orange); font-weight: 600; }
+      .popover .arrow { color: var(--muted); }
+
+      .fly {
+        position: fixed; z-index: 60; pointer-events: none; color: var(--gold);
+        transition: transform 0.45s cubic-bezier(0.3, 0.7, 0.3, 1), opacity 0.45s;
+      }
 
       .bricks { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
       .bricks .kw { color: var(--cyan); font-weight: 600; }

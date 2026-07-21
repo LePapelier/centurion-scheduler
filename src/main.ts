@@ -19,6 +19,12 @@ import { Hud, type Brick } from './ui/hud'
 import { runTour } from './ui/tour'
 import { tours } from './ui/tours'
 
+// http://…/?reset : repartir de zéro (progression, records, tours, audio).
+if (new URLSearchParams(location.search).has('reset')) {
+  localStorage.clear()
+  history.replaceState(null, '', location.pathname)
+}
+
 const app = document.getElementById('app')!
 const progress = loadProgress()
 

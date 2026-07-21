@@ -48,6 +48,7 @@ export class Hud {
   private readonly actionEls = new Map<string, HTMLElement>()
   private readonly invEl: HTMLElement | null
   private readonly movesEl: HTMLElement
+  private readonly deadlockEl: HTMLElement
   private readonly statusEl: HTMLElement
   private readonly traceEl: HTMLElement
   private readonly hintEl: HTMLElement
@@ -94,6 +95,7 @@ export class Hud {
         <div class="chips vars"></div>
         <div class="chips actions"></div>
         <div class="rule"><span class="rule-icon">◈</span> <span class="src">${hl(level.invariantSrc)}</span></div>
+        <div class="moves-top"></div>
       </div>`
     root.appendChild(panel)
 
@@ -112,8 +114,9 @@ export class Hud {
              <div class="goal-status"></div>`
           : ''
       }
+      <div class="chips varsbar"></div>
       <div class="actionbar"></div>
-      <div class="moves"></div>
+      <div class="deadlock hidden">⛔ blocage — plus aucune action possible : <b>annulez</b> (Backspace)</div>
       <div class="status"></div>
       <div class="hint"></div>
       <div class="trace"></div>
@@ -155,7 +158,10 @@ export class Hud {
       levelsEl.appendChild(snd)
     }
 
-    const varsEl = panel.querySelector('.vars')!
+    // Trace : les variables vivent au centre, près de l'action ; le compteur
+    // de coups monte en haut à gauche. Prove : variables dans le panneau.
+    const varsEl =
+      level.mode === 'trace' ? bar.querySelector('.varsbar')! : panel.querySelector('.vars')!
     for (const v of Object.keys(level.init)) {
       const el = document.createElement('span')
       el.className = 'chip var'
@@ -201,7 +207,8 @@ export class Hud {
     this.invEl = panel.querySelector('.rule')
     this.bricksEl = bar.querySelector('.bricks-list')
     this.goalEl = bar.querySelector('.goal-status')
-    this.movesEl = bar.querySelector('.moves')!
+    this.movesEl = panel.querySelector('.moves-top')!
+    this.deadlockEl = bar.querySelector('.deadlock')!
     this.statusEl = bar.querySelector('.status')!
     this.traceEl = bar.querySelector('.trace')!
     this.hintEl = bar.querySelector('.hint')!
@@ -292,6 +299,11 @@ export class Hud {
 
   setMoves(text: string): void {
     this.movesEl.textContent = text
+  }
+
+  /** Bannière de blocage : le joueur doit savoir qu'il est coincé. */
+  setDeadlock(stuck: boolean): void {
+    this.deadlockEl.classList.toggle('hidden', !stuck)
   }
 
   setStatus(html: string): void {

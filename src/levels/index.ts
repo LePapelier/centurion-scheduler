@@ -13,9 +13,11 @@ import peterson from './06-peterson.tla?raw'
  * - Les ACTIONS sont strictement des interactions avec le système modélisé
  *   (transitions internes : load, check0, prechauffer…) — jamais des gestes
  *   narratifs d'un agent externe (voler une clé, distraire un gardien).
- * - Toute action doit être sur au moins un chemin gagnant — ni décor, ni
+ * - Toute action doit servir sur au moins un chemin gagnant DEPUIS un état
+ *   atteignable (les actions de récupération comptent) — ni décor, ni
  *   piège pur.
- * - Un niveau trace doit avoir de la tension : l'ORDRE fait le puzzle,
+ * - Un niveau trace doit avoir de la tension : impasses possibles (le jeu
+ *   les annonce), boucles de récupération, l'ORDRE fait le puzzle —
  *   jamais « tout input gagne ».
  * - L'affichage ne doit jamais donner la réponse à copier (l'invariant
  *   affiché n'est pas une solution).

@@ -7,6 +7,8 @@ export interface Progress {
   scores: Record<string, number>
   /** Visites guidées déjà terminées, par id de niveau. */
   tours: Record<string, boolean>
+  /** États découverts par id de niveau (indices — les graphes sont déterministes). */
+  discovered: Record<string, number[]>
 }
 
 export function loadProgress(): Progress {
@@ -15,12 +17,17 @@ export function loadProgress(): Progress {
     if (raw !== null) {
       const p = JSON.parse(raw) as Partial<Progress>
       if (typeof p.unlocked === 'number' && typeof p.scores === 'object')
-        return { unlocked: p.unlocked, scores: p.scores ?? {}, tours: p.tours ?? {} }
+        return {
+          unlocked: p.unlocked,
+          scores: p.scores ?? {},
+          tours: p.tours ?? {},
+          discovered: p.discovered ?? {},
+        }
     }
   } catch {
     // stockage indisponible ou corrompu → progression vierge
   }
-  return { unlocked: 0, scores: {}, tours: {} }
+  return { unlocked: 0, scores: {}, tours: {}, discovered: {} }
 }
 
 export function saveProgress(p: Progress): void {

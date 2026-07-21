@@ -21,6 +21,8 @@ export interface Styles {
   readonly ctiEdges?: ReadonlySet<number>
   /** États non révélés mais visibles en balise (trace : les cibles rouges luisent à travers le brouillard). */
   readonly beacons?: ReadonlySet<number>
+  /** Nœuds sur le chemin joué (teinte dorée). */
+  readonly traceNodes?: ReadonlySet<number>
 }
 
 const NODE_RADIUS = 0.32
@@ -124,6 +126,9 @@ export class GraphView {
   /** Pulses circulant sur les arêtes CTI. */
   private ctiList: number[] = []
   private readonly ctiMovers: THREE.Sprite[] = []
+  /** Flux néon doré circulant le long du chemin joué (sens de la trace). */
+  private traceList: number[] = []
+  private readonly traceMovers: THREE.Sprite[] = []
   private readonly softTexture = haloTexture()
   private readonly dummy = new THREE.Object3D()
   private readonly raycaster = new THREE.Raycaster()
@@ -215,6 +220,16 @@ export class GraphView {
 
   nodePosition(i: number, out: THREE.Vector3): THREE.Vector3 {
     return out.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])
+  }
+
+  /** Révélation immédiate d'un sous-ensemble (mémoire de découverte). */
+  revealMany(indices: Iterable<number>): void {
+    for (const i of indices) {
+      if (i < 0 || i >= this.graph.nodes.length || this.revealed[i]) continue
+      this.revealed[i] = true
+      this.revealScale[i] = 1
+      this.ensureLabel(i)
+    }
   }
 
   /** Tout révéler d'emblée (mode prove — pas de brouillard). */
@@ -399,6 +414,23 @@ export class GraphView {
       this.ctiMovers.push(sprite)
     }
     this.ctiMovers.forEach((s, k) => (s.visible = k < this.ctiList.length))
+    // Flux doré du chemin joué (un pulse par arête de trace, plafonné).
+    this.traceList = [...styles.traceEdges].slice(0, 24)
+    while (this.traceMovers.length < this.traceList.length) {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: this.softTexture,
+          color: color.edgeAccent,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          transparent: true,
+        }),
+      )
+      sprite.scale.setScalar(0.5)
+      this.ctx.scene.add(sprite)
+      this.traceMovers.push(sprite)
+    }
+    this.traceMovers.forEach((s, k) => (s.visible = k < this.traceList.length))
     this.applyStyles()
   }
 
@@ -408,6 +440,7 @@ export class GraphView {
       this.tmpColor.copy(styles.overrides?.get(i) ?? this.nodeColors[i])
       if (styles.frontier.has(i)) this.tmpColor.lerp(color.frontier, 0.55)
       if (i === styles.highlight) this.tmpColor.lerp(color.selected, 0.45)
+      if (styles.traceNodes?.has(i)) this.tmpColor.lerp(color.edgeAccent, 0.35)
       if (styles.dimmed?.has(i)) this.tmpColor.lerp(color.background, 0.62)
       // La région reste lisible même sur un état fantôme (appliquée après).
       if (styles.region?.has(i)) this.tmpColor.lerp(color.region, 0.45)
@@ -571,6 +604,20 @@ export class GraphView {
         this.display[from * 3 + 1] + (this.display[to * 3 + 1] - this.display[from * 3 + 1]) * t,
         this.display[from * 3 + 2] + (this.display[to * 3 + 2] - this.display[from * 3 + 2]) * t,
       )
+    })
+
+    // Flux doré : la trace jouée s'écoule dans le sens du chemin.
+    this.traceMovers.forEach((sprite, k) => {
+      if (k >= this.traceList.length) return
+      const { from, to } = graph.edges[this.traceList[k]]
+      const t = (time * 0.0009 + k * 0.21) % 1
+      sprite.position.set(
+        this.display[from * 3] + (this.display[to * 3] - this.display[from * 3]) * t,
+        this.display[from * 3 + 1] + (this.display[to * 3 + 1] - this.display[from * 3 + 1]) * t,
+        this.display[from * 3 + 2] + (this.display[to * 3 + 2] - this.display[from * 3 + 2]) * t,
+      )
+      const mat = sprite.material as THREE.SpriteMaterial
+      mat.opacity = 0.5 + 0.4 * Math.sin(t * Math.PI)
     })
 
     const cur = this.styles.current

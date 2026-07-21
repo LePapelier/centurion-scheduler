@@ -277,6 +277,16 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   for (let i = 0; i < graph.nodes.length; i++) if (graph.nodes[i].violating) beacons.add(i)
   /** Après la victoire : les états jamais explorés restent en gris. */
   let mapDimmed: Set<number> | undefined
+  let wasStuck = false
+
+  // L'espace découvert lors des parties précédentes reste visible.
+  view.revealMany(progress.discovered[level.id] ?? [])
+  const saveDiscovered = (): void => {
+    const seen: number[] = []
+    for (let i = 0; i < graph.nodes.length; i++) if (view.revealed[i]) seen.push(i)
+    progress.discovered[level.id] = seen
+    saveProgress(progress)
+  }
 
   const enabledMoves = (): Map<string, number> => {
     const at = currentNode(game, graph)
@@ -301,6 +311,8 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       view.reveal(graph.edges[e].to, at)
       frontier.add(graph.edges[e].to)
     }
+    const traceNodes = new Set<number>([0])
+    for (const e of game.moves) traceNodes.add(graph.edges[e].to)
     view.setStyles({
       current: at,
       frontier,
@@ -309,6 +321,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       highlight: ghost,
       beacons, // les états interdits luisent à travers le brouillard
       dimmed: mapDimmed,
+      traceNodes,
     })
     hud.updateVars(graph.nodes[at].state, prevState)
     hud.setEnabledActions(new Set(moves.keys()))
@@ -341,11 +354,12 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
         'Règle brisée !',
         `<p>${trace.join(' → ')}</p><p><b>${game.moves.length}</b> coups — ${medal}</p>`,
       )
-    } else if (moves.size === 0) {
-      hud.setHint('aucune action activée — annulez un coup')
-    } else {
-      hud.setHint('')
     }
+    // Impasse : le joueur doit le SAVOIR (bannière + nappe sonore à l'entrée).
+    const stuck = !graph.nodes[at].violating && moves.size === 0
+    hud.setDeadlock(stuck)
+    if (stuck && !wasStuck) audio.doom()
+    wasStuck = stuck
     // À la victoire, la secousse joue seule ; le glissement suit.
     if (graph.nodes[at].violating) window.setTimeout(() => glideTo(at), 400)
     else glideTo(at)
@@ -370,6 +384,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       ctx.shake()
       audio.doom()
     }
+    saveDiscovered()
     document.dispatchEvent(new CustomEvent('ds:action-played'))
   }
 

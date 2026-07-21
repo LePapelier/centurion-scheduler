@@ -75,6 +75,21 @@
         padding: 10px 14px; backdrop-filter: blur(4px);
       }
       .commandbar .bricks-list { max-height: 132px; overflow-y: auto; }
+      .commandbar .varsbar { justify-content: center; margin-bottom: 6px; }
+      .commandbar .varsbar:empty { display: none; }
+      .panel .moves-top { color: var(--orange); margin-top: 8px; }
+      .panel .moves-top:empty { display: none; }
+      .commandbar .deadlock {
+        margin: 6px 0; padding: 6px 10px; text-align: center;
+        color: var(--pink); border: 1px solid rgba(255, 107, 157, 0.55);
+        border-radius: 6px; background: rgba(255, 107, 157, 0.08);
+        animation: deadlock-pulse 1.6s ease-in-out infinite;
+      }
+      .commandbar .deadlock b { color: var(--text); }
+      @keyframes deadlock-pulse {
+        0%, 100% { box-shadow: 0 0 0 rgba(255, 107, 157, 0); }
+        50% { box-shadow: 0 0 18px rgba(255, 107, 157, 0.35); }
+      }
       .commandbar .actionbar {
         display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
         margin-bottom: 6px;

@@ -93,15 +93,25 @@
       .spec .var { display: inline-block; margin-right: 14px; color: var(--muted); }
       .spec .var b { color: var(--body); font-weight: 600; }
       .spec .var.changed b { color: var(--orange); }
+      .spec .var.changed b .hl-num, .spec .var.changed b .hl-str { color: var(--orange); }
       .spec .action {
         padding: 2px 6px 2px 2.4em; margin: 1px -6px; border-radius: 5px;
         color: var(--dim); text-indent: -2.05em; transition: background 0.12s;
       }
       .spec .action .kw { color: var(--dim); }
+      /* Coloration par token (cohérente avec l'éditeur). */
+      .hl-var { color: #78b8ff; }
+      .hl-num { color: #f7dc6f; }
+      .hl-str { color: #81c995; }
+      .hl-op { color: #aa96da; }
+      .hl-punct { color: var(--muted); }
+      /* Actions désactivées : on estompe sans écraser les couleurs des tokens. */
+      .spec .action { opacity: 0.4; }
+      .spec .action.enabled, .spec .action.failing { opacity: 1; }
+
       .spec .action.enabled { color: var(--body); cursor: pointer; }
       .spec .action.enabled .kw { color: var(--cyan); }
       .spec .action.enabled .aname { color: var(--orange); font-weight: 600; }
-      .spec .action.enabled .guard { color: var(--green); }
       .spec .action.enabled:hover, .spec .action.hovered { background: var(--hover); }
       .spec .action.failing { background: rgba(255, 107, 157, 0.1); color: var(--body); }
       .spec .action.failing .aname { color: var(--pink); font-weight: 600; }

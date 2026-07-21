@@ -1,5 +1,6 @@
 import type { State } from '../core/spec'
 import type { CompiledLevel } from '../dsl/ast'
+import { hl, hlValue } from './highlight'
 
 export interface HudCallbacks {
   onUndo(): void
@@ -82,7 +83,7 @@ export class Hud {
         <div class="kw">VARIABLES</div>
         <div class="vars"></div>
         <div class="actions"></div>
-        <div class="inv"><span class="kw">INVARIANT</span> <span class="src">${level.invariantSrc}</span></div>
+        <div class="inv"><span class="kw">INVARIANT</span> <span class="src">${hl(level.invariantSrc)}</span></div>
       </div>`
     root.appendChild(panel)
 
@@ -133,7 +134,7 @@ export class Hud {
     for (const a of level.actionsSrc) {
       const el = document.createElement('div')
       el.className = 'action'
-      el.innerHTML = `<span class="kw">ACTION</span> <span class="aname">${a.name}</span> ≜ <span class="guard">${a.guardSrc}</span> <span class="arrow">→</span> <span class="upd">${a.updateSrc}</span>`
+      el.innerHTML = `<span class="kw">ACTION</span> <span class="aname">${a.name}</span> ≜ <span class="guard">${hl(a.guardSrc)}</span> <span class="arrow">→</span> <span class="upd">${hl(a.updateSrc)}</span>`
       actionsEl.appendChild(el)
       this.actionEls.set(a.name, el)
     }
@@ -173,7 +174,7 @@ export class Hud {
 
   updateVars(state: State, prevState: State | null): void {
     for (const [name, el] of this.varEls) {
-      el.innerHTML = `${name} = <b>${JSON.stringify(state[name])}</b>`
+      el.innerHTML = `<span class="hl-var">${name}</span> <span class="hl-op">=</span> <b>${hlValue(state[name])}</b>`
       el.classList.toggle('changed', prevState !== null && prevState[name] !== state[name])
     }
   }
@@ -197,7 +198,7 @@ export class Hud {
       .map(
         (b) => `
         <div class="brick${b.given ? ' given' : ''}">
-          <span class="box">□</span> <span class="bname">${b.name}</span> ≜ <span class="src">${b.src}</span>
+          <span class="box">□</span> <span class="bname">${b.name}</span> ≜ <span class="src">${hl(b.src)}</span>
           ${b.given ? '<span class="tag">donnée</span>' : ''}
           ${b.deletable === true ? `<button class="bdel" data-name="${b.name}" title="supprimer">✕</button>` : ''}
           ${b.deps.length > 0 ? `<div class="deps">└ s'appuie sur : ${b.deps.map((d) => `<span class="dep">${d}</span>`).join(' · ')}</div>` : ''}

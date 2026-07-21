@@ -13,6 +13,7 @@ import { color } from './render/palette'
 import { SceneCtx } from './render/scene'
 import { loadProgress, recordScore, saveProgress, unlock } from './ui/campaign'
 import { FormulaEditor, OPERATOR_COMPLETIONS, type EditorOpts } from './ui/editor'
+import { hl, hlValue } from './ui/highlight'
 import { Hud, type Brick } from './ui/hud'
 import { runTour } from './ui/tour'
 import { tours } from './ui/tours'
@@ -118,7 +119,7 @@ function attachInspection(
     view.setSelected(hit)
     const state = graph.nodes[hit].state
     const rows = Object.entries(state)
-      .map(([k, v]) => `<div class="row">${k} = <b>${JSON.stringify(v)}</b></div>`)
+      .map(([k, v]) => `<div class="row"><span class="hl-var">${k}</span> <span class="hl-op">=</span> <b>${hlValue(v)}</b></div>`)
       .join('')
     const out = graph.successors[hit].length
     hud.showInspector(
@@ -569,7 +570,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
         }
         const useful = bricks.filter((b) => need.has(b.name) && !b.given)
         const score = useful.reduce((n, b) => n + countTokens(b.src), 0)
-        const wall = useful.map((b) => `□ ${b.name} ≜ ${b.src}`).join('<br>')
+        const wall = useful.map((b) => `□ ${b.name} ≜ ${hl(b.src)}`).join('<br>')
         const extra = bricks.filter((b) => !b.given).length - useful.length
         win(
           score,

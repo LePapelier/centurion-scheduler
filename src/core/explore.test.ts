@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { levels } from '../levels'
+import { compileLevel } from '../dsl/parse'
 import { explore } from './explore'
-
-const mutex = levels.find((l) => l.id === 't2-mutex')!
 import { stateKey } from './spec'
+
+// Fixture autonome : mutex « test puis set » à 2 processus.
+const mutex = compileLevel(`
+LEVEL fixture-mutex
+MODE trace
+VARIABLES
+  pc0 ∈ {"idle", "ready", "crit"} = "idle"
+  pc1 ∈ {"idle", "ready", "crit"} = "idle"
+  flag0 ∈ {0, 1} = 0
+  flag1 ∈ {0, 1} = 0
+ACTION check0 ≜ pc0 = "idle" ∧ flag1 = 0 → pc0 := "ready"
+ACTION enter0 ≜ pc0 = "ready" → pc0 := "crit" ∧ flag0 := 1
+ACTION check1 ≜ pc1 = "idle" ∧ flag0 = 0 → pc1 := "ready"
+ACTION enter1 ≜ pc1 = "ready" → pc1 := "crit" ∧ flag1 := 1
+INVARIANT ¬(pc0 = "crit" ∧ pc1 = "crit")
+`)
 
 describe('explore(mutex)', () => {
   const graph = explore(mutex)

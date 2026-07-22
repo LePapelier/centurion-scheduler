@@ -1,9 +1,9 @@
 import { compileLevel } from '../dsl/parse'
 import fusible from './01-fusible.tla?raw'
 import four from './02-four.tla?raw'
-import mutex from './03-mutex.tla?raw'
-import banque from './04-banque.tla?raw'
-import sas from './05-sas.tla?raw'
+import banque from './03-banque.tla?raw'
+import sas from './04-sas.tla?raw'
+import triangle from './05-triangle.tla?raw'
 import fusibleSur from './06-fusible-sur.tla?raw'
 import mutexCorrige from './07-mutex-corrige.tla?raw'
 import peterson from './08-peterson.tla?raw'
@@ -25,6 +25,6 @@ import peterson from './08-peterson.tla?raw'
  *   affiché n'est pas une solution).
  * - Public sans bagage formel : thèmes concrets, zéro paragraphe explicatif.
  */
-export const levels = [fusible, four, mutex, banque, sas, fusibleSur, mutexCorrige, peterson].map(
+export const levels = [fusible, four, banque, sas, triangle, fusibleSur, mutexCorrige, peterson].map(
   compileLevel,
 )

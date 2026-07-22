@@ -129,8 +129,8 @@ export class Hud {
              <div class="goal-status"></div>`
           : ''
       }
-      <div class="chips varsbar"></div>
       <div class="actionbar"></div>
+      <div class="chips varsbar"></div>
       <div class="deadlock hidden">⛔ blocage — plus aucune action possible : <b>annulez</b> (Backspace)</div>
       <div class="status"></div>
       <div class="hint"></div>

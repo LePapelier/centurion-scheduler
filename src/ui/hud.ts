@@ -213,11 +213,11 @@ export class Hud {
     const hoverAction = (el: HTMLElement, a: (typeof level.actionsSrc)[number]): void => {
       el.addEventListener('mouseenter', () => {
         this.popoverEl.innerHTML = `
-          <div class="pop-row"><span class="pop-tag guard">possible si</span> ${hl(a.guardSrc)}</div>
-          <div class="pop-row"><span class="pop-tag effect">résultat</span> ${hl(a.updateSrc)}</div>`
+          <div class="pop-row"><span class="pop-tag guard">condition</span><span class="pop-body">${hl(a.guardSrc)}</span></div>
+          <div class="pop-row"><span class="pop-tag effect">effet</span><span class="pop-body">${hl(a.updateSrc)}</span></div>`
         this.popoverEl.classList.remove('hidden')
         const r = el.getBoundingClientRect()
-        this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 380)}px`
+        this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 460)}px`
         this.popoverEl.style.top =
           level.mode === 'trace'
             ? `${r.top - this.popoverEl.offsetHeight - 8}px`
@@ -330,7 +330,7 @@ export class Hud {
         this.popoverEl.innerHTML = `<span class="aname">${a.name}</span> <span class="pop-def">${hl(a.src)}</span>`
         this.popoverEl.classList.remove('hidden')
         const r = el.getBoundingClientRect()
-        this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 380)}px`
+        this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 460)}px`
         this.popoverEl.style.top = `${r.bottom + 6}px`
       })
       el.addEventListener('mouseleave', () => this.popoverEl.classList.add('hidden'))

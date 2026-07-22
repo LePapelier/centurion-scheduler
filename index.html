@@ -239,17 +239,18 @@
       }
 
       .popover {
-        position: fixed; z-index: 80; max-width: 370px;
+        position: fixed; z-index: 80; max-width: 440px;
         background: rgba(7, 11, 20, 0.97); border: 1px solid var(--border);
-        border-radius: 8px; padding: 7px 11px; pointer-events: none;
+        border-radius: 8px; padding: 8px 12px; pointer-events: none;
         box-shadow: 0 6px 30px rgba(0, 0, 0, 0.55);
       }
       .popover .kw { color: var(--cyan); font-weight: 600; }
       .popover .aname { color: var(--orange); font-weight: 600; }
       .popover .pop-def { color: var(--muted); margin-left: 4px; }
       .pop-row { display: flex; gap: 9px; align-items: baseline; margin: 3px 0; }
+      .pop-body { min-width: 0; }
       .pop-tag {
-        flex: 0 0 auto; min-width: 5.4em;
+        flex: 0 0 auto; min-width: 4.6em;
         font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
       }
       .pop-tag.guard { color: var(--green); }

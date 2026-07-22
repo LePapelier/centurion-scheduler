@@ -127,6 +127,11 @@ export class Hud {
     this.popoverEl.className = 'popover hidden'
     root.appendChild(this.popoverEl)
 
+    // Trace d'attaque : en haut à droite, sans cadre, par-dessus le graphe.
+    const traceTop = document.createElement('div')
+    traceTop.className = 'attacktrace'
+    root.appendChild(traceTop)
+
     // Barre de commande : saisie, briques et feedback, centrées en bas.
     const bar = document.createElement('div')
     bar.className = 'commandbar'
@@ -146,7 +151,6 @@ export class Hud {
       <div class="deadlock hidden">⛔ blocage — plus aucune action possible : <b>annulez</b> (Backspace)</div>
       <div class="status"></div>
       <div class="hint"></div>
-      <div class="trace"></div>
       <div class="buttons">
         <button data-act="undo">← annuler</button>
         <button data-act="reset">réinitialiser</button>
@@ -344,7 +348,7 @@ export class Hud {
     this.movesEl = panel.querySelector('.moves-top')!
     this.deadlockEl = bar.querySelector('.deadlock')!
     this.statusEl = bar.querySelector('.status')!
-    this.traceEl = bar.querySelector('.trace')!
+    this.traceEl = traceTop
     this.hintEl = bar.querySelector('.hint')!
     this.editorMount = bar.querySelector('.editor-mount')!
     bar.querySelector('[data-act=undo]')!.addEventListener('click', cb.onUndo)
@@ -473,7 +477,7 @@ export class Hud {
   setTrace(names: readonly string[]): void {
     this.traceEl.innerHTML = names
       .map((a) => `<span class="step">${a}</span>`)
-      .join('<span class="arrow">→</span>')
+      .join('<span class="arrow"> → </span>')
   }
 
   /** La formule prouvée vole de l'éditeur vers le mur de briques. */

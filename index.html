@@ -312,8 +312,15 @@
       .inspector .note { margin-top: 6px; color: var(--gold); font-size: 11px; }
 
       .panel .hint { margin-top: 8px; color: var(--blue); min-height: 1.5em; }
-      .panel .trace { margin-top: 8px; color: var(--gold); word-break: break-word; }
-      .panel .trace .arrow { color: var(--dim); margin: 0 4px; }
+
+      /* Trace d'attaque : coin haut droit, sans cadre, par-dessus le graphe. */
+      .attacktrace {
+        position: absolute; top: 16px; right: 18px; z-index: 15;
+        max-width: 46vw; text-align: right; pointer-events: none;
+        color: var(--gold); text-shadow: 0 0 8px rgba(2, 4, 10, 0.95), 0 0 8px rgba(2, 4, 10, 0.95);
+      }
+      .attacktrace:empty { display: none; }
+      .attacktrace .arrow { color: var(--dim); }
       .panel .buttons { margin-top: 12px; display: flex; gap: 8px; }
       button {
         background: #101a30; color: var(--body);

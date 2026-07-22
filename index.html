@@ -156,6 +156,11 @@
         padding: 4px 12px; font: inherit; cursor: pointer;
       }
       .horn-submit:hover { background: #16324a; }
+      .horn-submit.disabled {
+        color: var(--dim); border-color: var(--border);
+        cursor: not-allowed; opacity: 0.55;
+      }
+      .horn-submit.disabled:hover { background: #10233a; }
       .commandbar .buttons { display: flex; gap: 6px; margin: 8px 0 0; justify-content: center; }
       .commandbar .moves { margin: 0; }
       .commandbar .status { margin: 2px 0 0; }

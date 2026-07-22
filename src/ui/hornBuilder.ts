@@ -72,6 +72,7 @@ export class HornBuilder {
   private readonly opts: HornBuilderOpts
   private readonly bodyEl: HTMLElement
   private readonly headEl: HTMLElement
+  private readonly submitBtn: HTMLButtonElement
 
   constructor(opts: HornBuilderOpts) {
     this.opts = opts
@@ -84,7 +85,8 @@ export class HornBuilder {
     opts.parent.appendChild(root)
     this.bodyEl = root.querySelector('.horn-body')!
     this.headEl = root.querySelector('.horn-head')!
-    root.querySelector('.horn-submit')!.addEventListener('click', () => this.submit())
+    this.submitBtn = root.querySelector('.horn-submit')!
+    this.submitBtn.addEventListener('click', () => this.submit())
     this.render()
   }
 
@@ -157,7 +159,14 @@ export class HornBuilder {
     if (this.opts.atoms.some((a) => a.name === atom)) this.cycleBody(atom)
   }
 
+  /** Active/désactive le bouton « poser » selon que la clause est posable (sans fuite). */
+  setReady(ready: boolean): void {
+    this.submitBtn.classList.toggle('disabled', !ready)
+    this.submitBtn.title = ready ? '' : 'clause impossible à poser : elle a une fuite'
+  }
+
   submit(): void {
+    if (this.submitBtn.classList.contains('disabled')) return
     if (clauseComplete(this.clause())) this.opts.onSubmit(this.clause())
   }
 

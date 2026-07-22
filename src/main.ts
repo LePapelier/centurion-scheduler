@@ -596,6 +596,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     if (locked) return null
     if (!clauseComplete(c)) {
       idle()
+      builder.setReady(false)
       hud.setStatus(`assemblez une clause : <b>SI</b> des prémisses <b>ALORS</b> une conclusion`)
       return null
     }
@@ -603,12 +604,14 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     try {
       expr = clauseExpr(c, atomExpr)
     } catch (err) {
+      builder.setReady(false)
       hud.setStatus(`<span class="err">✗ ${(err as Error).message}</span>`)
       return null
     }
     const report = checkCandidate(space, bricks.map((b) => b.expr), expr)
     showReport(report)
     refreshObligations(expr) // les obligations intègrent la clause en cours
+    builder.setReady(report.ok) // posable seulement si aucune fuite
     return report
   }
 

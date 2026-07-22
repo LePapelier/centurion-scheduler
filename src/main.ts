@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { explore, type Graph } from './core/explore'
 import { buildFullSpace, type FullSpace } from './core/fullspace'
 import { currentNode, newGame, play, undo, type Game } from './core/game'
-import { checkCandidate, impliesGoal, usedBricks } from './core/prove'
+import { checkCandidate, checkObligations, impliesGoal, usedBricks } from './core/prove'
 import type { CompiledLevel, Expr } from './dsl/ast'
 import { countTokens } from './dsl/parse'
 import { layout } from './layout/force'
@@ -215,6 +215,7 @@ function startLevel(index: number): () => void {
       onInsertAction: (name) => modeHooks.onInsertAction?.(name),
       onPlayAction: (name) => modeHooks.onPlayAction?.(name),
       onHoverAction: (name) => modeHooks.onHoverAction?.(name),
+      onObligationClick: (i) => modeHooks.onObligationClick?.(i),
       onToggleAudio: () => audio.toggle(),
       audioEnabled: () => audio.enabled,
       actionColor: actionHex(level),
@@ -239,6 +240,7 @@ interface ModeHooks {
   onInsertAction?(name: string): void
   onPlayAction?(name: string): void
   onHoverAction?(name: string | null): void
+  onObligationClick?(index: number): void
   onDispose?(): void
 }
 
@@ -528,12 +530,34 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     return proved
   }
 
+  // Obligations par action pour un jeu de clauses. Mémorise le témoin cliqué.
+  let oblEdges: (number | null)[] = []
+  const refreshObligations = (extra: Expr | null): void => {
+    const clauses = [...bricks.map((b) => b.expr), ...(extra ? [extra] : [])]
+    const obl = checkObligations(space, clauses)
+    const rows: { label: string; ok: boolean; detail?: string }[] = [
+      { label: 'départ ⊨ tes clauses', ok: obl.initOk },
+    ]
+    oblEdges = [null]
+    for (const a of level.actionsSrc) {
+      const e = obl.failing.get(a.name)
+      rows.push({
+        label: `${a.name} préserve`,
+        ok: e === undefined,
+        detail: e === undefined ? undefined : `${labels[graph.edges[e].from]} → ${labels[graph.edges[e].to]}`,
+      })
+      oblEdges.push(e ?? null)
+    }
+    hud.renderObligations(rows)
+  }
+
   const idle = (): void => {
     view.setStyles(baseStyles)
     hud.setFailingActions(EMPTY as unknown as Set<string>)
     hud.setStatus(
       `<b>${graph.nodes.length}</b> états, <b>${space.reachable.size}</b> atteignables — fantômes assombris`,
     )
+    refreshObligations(null)
   }
 
   const atomExpr = new Map(level.atoms.map((a) => [a.name, a.expr] as const))
@@ -584,6 +608,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     }
     const report = checkCandidate(space, bricks.map((b) => b.expr), expr)
     showReport(report)
+    refreshObligations(expr) // les obligations intègrent la clause en cours
     return report
   }
 
@@ -689,6 +714,14 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     },
     // Clic sur un atome du panneau : l'ajoute au corps de la clause.
     onInsertAction: (name) => builder.toggleBody(name),
+    // Clic sur une obligation en échec : surligne sa transition témoin.
+    onObligationClick: (i) => {
+      const e = oblEdges[i]
+      if (e === null || e === undefined) return
+      view.setStyles({ ...baseStyles, ctiEdges: new Set([e]), highlight: graph.edges[e].to })
+      view.flashNode(graph.edges[e].from)
+      view.flashNode(graph.edges[e].to)
+    },
     onDispose: () => window.removeEventListener('keydown', keydown),
   }
 }

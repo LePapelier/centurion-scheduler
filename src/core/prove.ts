@@ -19,6 +19,31 @@ function holds(expr: Expr, s: Parameters<typeof evalExpr>[1]): boolean {
   return v
 }
 
+export interface Obligations {
+  /** L'état initial satisfait-il ⋀clauses ? */
+  readonly initOk: boolean
+  /** action → première transition témoin d'un échec de préservation (indice d'arête). */
+  readonly failing: ReadonlyMap<string, number>
+}
+
+/**
+ * Obligations d'induction du jeu de clauses, RÉGROUPÉES PAR ACTION.
+ * Pour chaque action A, l'obligation « {⋀clauses} A {⋀clauses} » est tenue
+ * si aucune transition via A ne part d'un état ⊨ ⋀clauses vers un état qui
+ * ne le satisfait pas. C'est exactement l'induction, vue action par action.
+ */
+export function checkObligations(space: FullSpace, clauses: readonly Expr[]): Obligations {
+  const { graph } = space
+  const all = (s: Parameters<typeof evalExpr>[1]): boolean => clauses.every((c) => holds(c, s))
+  const failing = new Map<string, number>()
+  for (let e = 0; e < graph.edges.length; e++) {
+    const { from, to, action } = graph.edges[e]
+    if (failing.has(action)) continue // un témoin suffit
+    if (all(graph.nodes[from].state) && !all(graph.nodes[to].state)) failing.set(action, e)
+  }
+  return { initOk: all(graph.nodes[space.init].state), failing }
+}
+
 /**
  * Induction relative : P est prouvable si Init ⊨ P et si, pour tout état s
  * de l'espace COMPLET tel que s ⊨ ⋀briques ∧ P, chaque transition s → s'

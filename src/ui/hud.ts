@@ -32,6 +32,8 @@ export interface HudCallbacks {
   audioEnabled?(): boolean
   /** Teinte sémantique de chaque action (légende du graphe). */
   actionColor?: ReadonlyMap<string, string>
+  /** Clic sur une obligation en échec (index de ligne). */
+  onObligationClick?(index: number): void
 }
 
 export interface LevelInfo {
@@ -68,6 +70,7 @@ export class Hud {
   private readonly hintEl: HTMLElement
   private readonly bricksEl: HTMLElement | null
   private readonly goalEl: HTMLElement | null
+  private readonly oblEl: HTMLElement | null
   private readonly victoryEl: HTMLElement
   private readonly victoryBody: HTMLElement
   private readonly nextBtn: HTMLButtonElement
@@ -130,7 +133,8 @@ export class Hud {
       <div class="editor-mount"></div>
       ${
         level.mode === 'prove'
-          ? `<div class="bricks"><div class="kw">BRIQUES</div><div class="bricks-list"></div></div>
+          ? `<div class="obligations"><div class="kw">OBLIGATIONS <span class="obl-sub">— toutes au vert</span></div><div class="obl-list"></div></div>
+             <div class="bricks"><div class="kw">BRIQUES</div><div class="bricks-list"></div></div>
              <div class="goal-status"></div>`
           : ''
       }
@@ -256,6 +260,7 @@ export class Hud {
     this.invEl = panel.querySelector('.rule')
     this.bricksEl = bar.querySelector('.bricks-list')
     this.goalEl = bar.querySelector('.goal-status')
+    this.oblEl = bar.querySelector('.obl-list')
     this.movesEl = panel.querySelector('.moves-top')!
     this.deadlockEl = bar.querySelector('.deadlock')!
     this.statusEl = bar.querySelector('.status')!
@@ -344,6 +349,24 @@ export class Hud {
     if (this.goalEl === null) return
     this.goalEl.innerHTML = html
     this.goalEl.classList.toggle('proved', proved)
+  }
+
+  /** Check-list des obligations : départ + une ligne par action. */
+  renderObligations(rows: readonly { label: string; ok: boolean; detail?: string }[]): void {
+    if (this.oblEl === null) return
+    this.oblEl.innerHTML = rows
+      .map(
+        (r, i) => `
+        <div class="obl${r.ok ? ' ok' : ' ko'}" data-i="${i}">
+          <span class="obl-mark">${r.ok ? '✓' : '✗'}</span>
+          <span class="obl-label">${r.label}</span>
+          ${r.detail !== undefined ? `<span class="obl-detail">${r.detail}</span>` : ''}
+        </div>`,
+      )
+      .join('')
+    this.oblEl.querySelectorAll<HTMLElement>('.obl.ko').forEach((el) => {
+      el.addEventListener('click', () => this.cb.onObligationClick?.(Number(el.dataset.i)))
+    })
   }
 
   setMoves(text: string): void {

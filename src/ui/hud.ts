@@ -30,6 +30,8 @@ export interface HudCallbacks {
   /** Bascule du son ; retourne le nouvel état. */
   onToggleAudio?(): boolean
   audioEnabled?(): boolean
+  /** Teinte sémantique de chaque action (légende du graphe). */
+  actionColor?: ReadonlyMap<string, string>
 }
 
 export interface LevelInfo {
@@ -197,6 +199,14 @@ export class Hud {
       const el = document.createElement('button')
       el.className = 'chip action'
       el.textContent = a.name
+      // Pastille de couleur = teinte de l'action sur le graphe (légende).
+      const ac = cb.actionColor?.get(a.name)
+      if (ac !== undefined) {
+        el.style.setProperty('--ac', ac)
+        const dot = document.createElement('span')
+        dot.className = 'ac-dot'
+        el.prepend(dot)
+      }
       el.addEventListener('click', () => {
         if (level.mode === 'trace') {
           if (el.classList.contains('enabled')) cb.onPlayAction?.(a.name)

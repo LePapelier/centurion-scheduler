@@ -37,18 +37,48 @@ function graphRadius(positions: Float32Array, subset?: Iterable<number>): number
 
 // ——— Helpers communs ———
 
-/** Couleur sémantique : gradient bleu → ambré → rose sur COLOR, rose si violant. */
-function semanticColors(level: CompiledLevel, graph: Graph): THREE.Color[] {
-  const values = graph.nodes.map((n) => level.colorValue?.(n.state) ?? 0)
-  const min = Math.min(...values)
-  const span = Math.max(...values) - min || 1
-  return graph.nodes.map((n, i) => {
-    if (n.violating) return color.violating.clone()
-    const t = (values[i] - min) / span
-    return t < 0.5
-      ? color.nodeCold.clone().lerp(color.nodeWarm, t * 2)
-      : color.nodeWarm.clone().lerp(color.violating, (t - 0.5) * 2)
+/** Une teinte distincte par action (hues régulièrement espacées). Déterministe. */
+function actionPalette(level: CompiledLevel): Map<string, THREE.Color> {
+  const names = level.actionsSrc.map((a) => a.name)
+  const m = new Map<string, THREE.Color>()
+  names.forEach((name, i) => {
+    const c = new THREE.Color()
+    c.setHSL((i / Math.max(names.length, 1) + 0.02) % 1, 0.62, 0.62)
+    m.set(name, c)
   })
+  return m
+}
+
+function actionHex(level: CompiledLevel): Map<string, string> {
+  return new Map([...actionPalette(level)].map(([n, c]) => [n, `#${c.getHexString()}`]))
+}
+
+/**
+ * Couleur SÉMANTIQUE par chemin : l'état initial est blanc ; chaque nœud
+ * prend la couleur de son parent BFS mélangée à la teinte de l'action
+ * empruntée — la couleur raconte la suite d'actions qui y mène. États
+ * violants : rose (la cible reste lisible) ; inatteignables : gris neutre.
+ */
+function semanticColors(level: CompiledLevel, graph: Graph, init: number): THREE.Color[] {
+  const palette = actionPalette(level)
+  const white = new THREE.Color(0xf7faff)
+  const acc: (THREE.Color | null)[] = graph.nodes.map(() => null)
+  acc[init] = white.clone()
+  const queue = [init]
+  for (let head = 0; head < queue.length; head++) {
+    const at = queue[head]
+    for (const e of graph.successors[at]) {
+      const to = graph.edges[e].to
+      if (acc[to] !== null) continue
+      const tint = palette.get(graph.edges[e].action) ?? white
+      acc[to] = acc[at]!.clone().lerp(tint, 0.42)
+      queue.push(to)
+    }
+  }
+  const neutral = new THREE.Color(0x39435a)
+  return graph.nodes.map((n, i) =>
+    n.violating ? color.violating.clone() : (acc[i] ?? neutral.clone()),
+  )
 }
 
 function nodeLabels(level: CompiledLevel, graph: Graph): string[] {
@@ -181,6 +211,7 @@ function startLevel(index: number): () => void {
       onHoverAction: (name) => modeHooks.onHoverAction?.(name),
       onToggleAudio: () => audio.toggle(),
       audioEnabled: () => audio.enabled,
+      actionColor: actionHex(level),
     },
   )
 
@@ -215,7 +246,7 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     graph.nodes.length,
     graph.edges.map((e) => [e.from, e.to] as const),
   )
-  const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), nodeLabels(level, graph))
+  const view = new GraphView(ctx, graph, positions, semanticColors(level, graph, 0), nodeLabels(level, graph))
   ctx.frameRadius(graphRadius(positions))
   attachInspection(
     ctx,
@@ -395,7 +426,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     graph.edges.map((e) => [e.from, e.to] as const),
   )
   const labels = nodeLabels(level, graph)
-  const view = new GraphView(ctx, graph, positions, semanticColors(level, graph), labels)
+  const view = new GraphView(ctx, graph, positions, semanticColors(level, graph, space.init), labels)
   view.revealCascade(space.init)
   audio.whoosh()
   // Cadrer le cœur atteignable : la périphérie fantôme reste hors champ.

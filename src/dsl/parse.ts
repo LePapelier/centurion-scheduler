@@ -302,9 +302,127 @@ function num(v: Value, line: number): number {
   throw new Error(`ligne ${line} : nombre attendu, « ${v} » trouvé`)
 }
 
+// ——— Actions/atomes paramétrés (macro d'expansion au parse) ———
+
+/** Arithmétique entière simple sur un index : + - * % et parenthèses. */
+function evalArith(src: string): number {
+  let i = 0
+  const skip = (): void => {
+    while (i < src.length && src[i] === ' ') i++
+  }
+  const atom = (): number => {
+    skip()
+    if (src[i] === '(') {
+      i++
+      const r = expr()
+      skip()
+      i++ // )
+      return r
+    }
+    if (src[i] === '-') {
+      i++
+      return -atom()
+    }
+    let j = i
+    while (j < src.length && /[0-9]/.test(src[j])) j++
+    if (j === i) throw new Error(`index invalide : « ${src} »`)
+    const n = Number(src.slice(i, j))
+    i = j
+    return n
+  }
+  const term = (): number => {
+    let r = atom()
+    for (;;) {
+      skip()
+      if (src[i] === '*') {
+        i++
+        r *= atom()
+      } else if (src[i] === '%') {
+        i++
+        r = ((r % atom()) + 1e9) % 1e9 // reste non négatif
+      } else return r
+    }
+  }
+  const expr = (): number => {
+    let r = term()
+    for (;;) {
+      skip()
+      if (src[i] === '+') {
+        i++
+        r += term()
+      } else if (src[i] === '-') {
+        i++
+        r -= term()
+      } else return r
+    }
+  }
+  const r = expr()
+  skip()
+  if (i !== src.length) throw new Error(`index invalide : « ${src} »`)
+  return r
+}
+
+/** Substitue un paramètre = valeur dans un corps : `x[expr]` → `x<val>`, puis `p` nu → val. */
+function substituteParam(body: string, param: string, value: number): string {
+  // 1. Indexation `nom[expr]` → concaténation du nom et de l'index évalué.
+  const indexed = body.replace(/([A-Za-z_]\w*)\[([^\]]+)\]/g, (_m, nom: string, expr: string) => {
+    const e = expr.replace(new RegExp(`\\b${param}\\b`, 'g'), String(value))
+    return nom + evalArith(e)
+  })
+  // 2. Occurrences nues du paramètre (valeurs : `turn := i`, `turn := 1 - i`).
+  return indexed.replace(new RegExp(`\\b${param}\\b`, 'g'), String(value)).trim()
+}
+
+/**
+ * Développe les familles paramétrées en instances plates, avant compilation :
+ *   ACTION check(i ∈ {0,1}) ≜ pc[i] = "idle" ∧ flag[1-i] = 0 → pc[i] := "ready"
+ * devient check0 / check1 sur variables pc0/pc1/flag0/flag1. S'applique à
+ * ACTION, ATOM, LEMMA et aux déclarations de variables `pc[i ∈ {0,1}] …`.
+ * Un seul paramètre par déclaration ; valeurs entières (index de nom).
+ */
+export function expandParametric(src: string): string {
+  const out: string[] = []
+  let inVariables = false
+  const decl = /^(\s*)(ACTION|ATOM|LEMMA)\s+(\w+)\(\s*(\w+)\s*(?:∈|\\in)\s*\{([^}]*)\}\s*\)\s*(≜|==)\s*(.*)$/
+  const varFam = /^(\s*)(\w+)\[\s*(\w+)\s*(?:∈|\\in)\s*\{([^}]*)\}\s*\]\s*(.*)$/
+  for (const raw of src.split('\n')) {
+    const stripped = raw.replace(/(\\\*|\/\/).*$/, '')
+    const kw = stripped.trim().split(/\s+/, 1)[0]
+    if (['LEVEL', 'NAME', 'DESC', 'VARIABLES', 'ACTION', 'INVARIANT', 'COLOR', 'LABEL',
+      'MODE', 'ATOM', 'LEMMA', 'TUTORIAL', 'GOAL'].includes(kw))
+      inVariables = kw === 'VARIABLES'
+
+    const m = stripped.match(decl)
+    if (m !== null) {
+      const [, indent, dir, nom, param, valsRaw, eq, body] = m
+      for (const v of valsRaw.split(',').map((s) => s.trim())) {
+        const val = Number(v)
+        if (!Number.isInteger(val)) throw new Error(`${dir} ${nom} : index non entier « ${v} »`)
+        out.push(`${indent}${dir} ${nom}${val} ${eq} ${substituteParam(body, param, val)}`)
+      }
+      continue
+    }
+    if (inVariables && kw !== 'VARIABLES') {
+      const vm = stripped.match(varFam)
+      if (vm !== null) {
+        const [, indent, nom, param, valsRaw, rest] = vm
+        for (const v of valsRaw.split(',').map((s) => s.trim())) {
+          const val = Number(v)
+          if (!Number.isInteger(val)) throw new Error(`variable ${nom} : index non entier « ${v} »`)
+          out.push(`${indent}${nom}${val} ${substituteParam(rest, param, val)}`)
+        }
+        continue
+      }
+    }
+    out.push(raw)
+  }
+  return out.join('\n')
+}
+
 // ——— Compilation d'un niveau ———
 
-export function compileLevel(src: string): CompiledLevel {
+export function compileLevel(rawSrc: string): CompiledLevel {
+  const src = expandParametric(rawSrc)
   let id = ''
   let name = ''
   const desc: string[] = []

@@ -5,22 +5,12 @@ DESC La règle : jamais les trois trains coincés sur l'anneau. Chaque train pre
 GOAL Provoquez le blocage circulaire.
 
 VARIABLES
-  t0 ∈ {"quai", "entré", "passé"} = "quai"
-  t1 ∈ {"quai", "entré", "passé"} = "quai"
-  t2 ∈ {"quai", "entré", "passé"} = "quai"
-  s0 ∈ {0, 1} = 0
-  s1 ∈ {0, 1} = 0
-  s2 ∈ {0, 1} = 0
+  t[i ∈ {0, 1, 2}] ∈ {"quai", "entré", "passé"} = "quai"
+  s[i ∈ {0, 1, 2}] ∈ {0, 1} = 0
 
-ACTION avancer0 ≜ t0 = "quai" ∧ s0 = 0 → t0 := "entré" ∧ s0 := 1
-ACTION franchir0 ≜ t0 = "entré" ∧ s1 = 0 → t0 := "passé" ∧ s1 := 1
-ACTION degager0 ≜ t0 = "passé" → t0 := "quai" ∧ s0 := 0 ∧ s1 := 0
-ACTION avancer1 ≜ t1 = "quai" ∧ s1 = 0 → t1 := "entré" ∧ s1 := 1
-ACTION franchir1 ≜ t1 = "entré" ∧ s2 = 0 → t1 := "passé" ∧ s2 := 1
-ACTION degager1 ≜ t1 = "passé" → t1 := "quai" ∧ s1 := 0 ∧ s2 := 0
-ACTION avancer2 ≜ t2 = "quai" ∧ s2 = 0 → t2 := "entré" ∧ s2 := 1
-ACTION franchir2 ≜ t2 = "entré" ∧ s0 = 0 → t2 := "passé" ∧ s0 := 1
-ACTION degager2 ≜ t2 = "passé" → t2 := "quai" ∧ s2 := 0 ∧ s0 := 0
+ACTION avancer(i ∈ {0, 1, 2})  ≜ t[i] = "quai" ∧ s[i] = 0 → t[i] := "entré" ∧ s[i] := 1
+ACTION franchir(i ∈ {0, 1, 2}) ≜ t[i] = "entré" ∧ s[(i+1)%3] = 0 → t[i] := "passé" ∧ s[(i+1)%3] := 1
+ACTION degager(i ∈ {0, 1, 2})  ≜ t[i] = "passé" → t[i] := "quai" ∧ s[i] := 0 ∧ s[(i+1)%3] := 0
 
 INVARIANT ¬(t0 = "entré" ∧ t1 = "entré" ∧ t2 = "entré")
 COLOR (t0 = "entré") + (t1 = "entré") + (t2 = "entré")

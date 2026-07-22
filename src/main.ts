@@ -15,8 +15,6 @@ import { loadProgress, recordScore, saveProgress, unlock } from './ui/campaign'
 import { FormulaEditor } from './ui/editor'
 import { hl, hlValue } from './ui/highlight'
 import { Hud, type Brick } from './ui/hud'
-import { runTour } from './ui/tour'
-import { tours } from './ui/tours'
 
 // http://…/?reset : repartir de zéro (progression, records, tours, audio).
 if (new URLSearchParams(location.search).has('reset')) {
@@ -147,10 +145,6 @@ function startLevel(index: number): () => void {
   const level = levels[index]
   const hasNext = index + 1 < levels.length
 
-  // Visite guidée : la victoire est différée tant que le tour est actif.
-  let tourActive = false
-  let pendingWin: (() => void) | null = null
-
   const win = (score: number, title: string, body: string): void => {
     audio.chime()
     const previousBest = progress.scores[level.id]
@@ -164,9 +158,7 @@ function startLevel(index: number): () => void {
           : `<p class="record">record : ${previousBest}</p>`
     // Casser = triomphe doré du démon ; prouver = sceau vert.
     const tone = level.mode === 'trace' ? 'gold' : 'green'
-    const show = (): void => hud.showVictory(title, body + record, hasNext, tone)
-    if (tourActive) pendingWin = show
-    else show()
+    hud.showVictory(title, body + record, hasNext, tone)
   }
 
   const hud = new Hud(
@@ -193,29 +185,9 @@ function startLevel(index: number): () => void {
   )
 
   const ctx = new SceneCtx(app)
-  let lastCameraEvent = 0
-  ctx.controls.addEventListener('change', () => {
-    const now = performance.now()
-    if (now - lastCameraEvent > 300) {
-      lastCameraEvent = now
-      document.dispatchEvent(new CustomEvent('ds:camera-moved'))
-    }
-  })
 
   const modeHooks =
     level.mode === 'trace' ? setupTrace(level, ctx, hud, win) : setupProve(level, ctx, hud, win)
-
-  const tour = tours[level.id]
-  if (tour !== undefined && progress.tours[level.id] !== true) {
-    tourActive = true
-    runTour(tour, () => {
-      tourActive = false
-      progress.tours[level.id] = true
-      saveProgress(progress)
-      pendingWin?.()
-      pendingWin = null
-    })
-  }
 
   return () => {
     modeHooks.onDispose?.()
@@ -370,7 +342,6 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       audio.doom()
     }
     saveDiscovered()
-    document.dispatchEvent(new CustomEvent('ds:action-played'))
   }
 
   const doUndo = (): void => {
@@ -472,7 +443,6 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   }))
   let locked = false
   let lastRegionKey = ''
-  let aliasUsedFired = false
 
   /** Vocabulaire : pièces élémentaires du niveau + briques acquises. */
   const pieces = (): Map<string, Expr> =>
@@ -604,7 +574,6 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       hud.setStatus(
         `<b>${report.ctis.length}</b> fuite${report.ctis.length > 1 ? 's' : ''} — <b>${e.action}</b> : ${labels[e.from]} → ${labels[e.to]}`,
       )
-      document.dispatchEvent(new CustomEvent('ds:cti-shown'))
     } else {
       hud.setStatus(`aucune fuite ✓ — Entrée : poser la brique`)
     }
@@ -627,12 +596,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       ...LOGIC_OPS,
     ],
     onChange: (text) => {
-      if (locked) return
-      preview(text)
-      if (!aliasUsedFired && bricks.some((b) => new RegExp(`(^|[^A-Za-z0-9_])${b.name}([^A-Za-z0-9_]|$)`).test(text))) {
-        aliasUsedFired = true
-        document.dispatchEvent(new CustomEvent('ds:alias-used'))
-      }
+      if (!locked) preview(text)
     },
     onSubmit: (text) => {
       if (locked || text === '') return
@@ -652,7 +616,6 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       hud.renderBricks(decorated())
       editor.setText('')
       idle()
-      document.dispatchEvent(new CustomEvent('ds:brick-proved'))
       if (refreshGoal()) {
         locked = true
         // Score = cône de dépendances de la preuve : l'exploration ne coûte rien.

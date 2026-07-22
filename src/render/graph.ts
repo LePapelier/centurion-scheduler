@@ -441,6 +441,10 @@ export class GraphView {
       if (styles.frontier.has(i)) this.tmpColor.lerp(color.frontier, 0.55)
       if (i === styles.highlight) this.tmpColor.lerp(color.selected, 0.45)
       if (styles.traceNodes?.has(i)) this.tmpColor.lerp(color.edgeAccent, 0.35)
+      // Balise non révélée : la même taille que les autres, mais éteinte —
+      // une lueur au loin, pas un nœud exploré.
+      if (styles.beacons?.has(i) === true && !this.revealed[i])
+        this.tmpColor.lerp(color.background, 0.55)
       if (styles.dimmed?.has(i)) this.tmpColor.lerp(color.background, 0.62)
       // La région reste lisible même sur un état fantôme (appliquée après).
       if (styles.region?.has(i)) this.tmpColor.lerp(color.region, 0.45)
@@ -493,16 +497,14 @@ export class GraphView {
     const labelUp = this.tmpA.copy(UP).applyQuaternion(camera.quaternion).multiplyScalar(0.58)
 
     for (let i = 0; i < graph.nodes.length; i++) {
+      // Taille FIXE : la sémantique passe par couleur, halo et lueur — jamais
+      // par la taille (décision Paul). Seuls restent l'éclosion (0 → 1) et le
+      // flash transitoire d'un pas joué (feedback d'événement).
       let s = this.revealed[i]
         ? this.revealScale[i]
         : this.styles.beacons?.has(i) === true
-          ? 0.45 + 0.1 * Math.sin(time * 0.003 + i) // balise : lueur qui respire
+          ? 1
           : 0
-      if (i === this.styles.current) s *= 1.35
-      else if (this.styles.frontier.has(i)) s *= 1 + 0.13 * Math.sin(time * 0.005 + i * 1.7)
-      if (i === this.styles.highlight) s *= 1.25
-      if (this.styles.dimmed?.has(i)) s *= 0.55
-      if (i === this.selected) s *= 1.3
       const flashDt = time - this.flashT[i]
       if (flashDt > 0 && flashDt < 350) s *= 1 + 0.5 * (1 - flashDt / 350)
       dummy.position.set(this.display[i * 3], this.display[i * 3 + 1], this.display[i * 3 + 2])

@@ -561,8 +561,10 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     let report
     try {
       report = checkCandidate(space, bricks.map((b) => b.expr), parseCandidate(text).expr)
-    } catch {
-      return null // le lint souligne déjà
+    } catch (err) {
+      // L'erreur doit se VOIR : en clair dans le statut, pas seulement soulignée.
+      hud.setStatus(`<span class="err">✗ ${(err as Error).message}</span>`)
+      return null
     }
     view.setStyles({
       ...baseStyles,

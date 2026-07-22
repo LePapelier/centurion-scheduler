@@ -2,6 +2,18 @@ import type { State } from '../core/spec'
 import type { CompiledLevel } from '../dsl/ast'
 import { hl, hlValue } from './highlight'
 
+/** Domaine affiché : {0..3} si entiers contigus, sinon la liste des valeurs. */
+function fmtDomain(dom: readonly (string | number)[]): string {
+  if (
+    dom.length > 2 &&
+    dom.every((v) => typeof v === 'number') &&
+    dom.every((v, i) => i === 0 || v === (dom[i - 1] as number) + 1)
+  ) {
+    return `{<span class="hl-num">${dom[0]}</span>..<span class="hl-num">${dom[dom.length - 1]}</span>}`
+  }
+  return `{${dom.map((v) => hlValue(v)).join(', ')}}`
+}
+
 export interface HudCallbacks {
   onUndo(): void
   onReset(): void
@@ -160,10 +172,16 @@ export class Hud {
       levelsEl.appendChild(snd)
     }
 
-    // Trace : les variables vivent au centre, près de l'action ; le compteur
-    // de coups monte en haut à gauche. Prove : variables dans le panneau.
-    const varsEl =
-      level.mode === 'trace' ? bar.querySelector('.varsbar')! : panel.querySelector('.vars')!
+    // Haut à gauche : les TYPES (domaines déclarés). Centre : les valeurs live.
+    const typesEl = panel.querySelector('.vars')!
+    for (const [name, dom] of level.domains) {
+      const el = document.createElement('span')
+      el.className = 'chip type'
+      el.innerHTML = `<span class="hl-var">${name}</span> <span class="hl-op">∈</span> ${fmtDomain(dom)}`
+      typesEl.appendChild(el)
+    }
+
+    const varsEl = bar.querySelector('.varsbar')!
     for (const v of Object.keys(level.init)) {
       const el = document.createElement('span')
       el.className = 'chip var'

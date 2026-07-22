@@ -182,12 +182,22 @@ export class Hud {
       levelsEl.appendChild(snd)
     }
 
-    // Haut à gauche : les TYPES (domaines déclarés). Centre : les valeurs live.
+    // Haut à gauche : les TYPES. Variables de même famille et même domaine
+    // regroupées : « g0, g1 ∈ {…} » au lieu d'une ligne par variable.
     const typesEl = panel.querySelector('.vars')!
+    const groups: { key: string; names: string[]; dom: readonly (string | number)[] }[] = []
     for (const [name, dom] of level.domains) {
+      const base = name.replace(/\d+$/, '')
+      const key = `${base}|${JSON.stringify(dom)}`
+      const g = groups.find((x) => x.key === key)
+      if (g) g.names.push(name)
+      else groups.push({ key, names: [name], dom })
+    }
+    for (const g of groups) {
       const el = document.createElement('span')
       el.className = 'chip type'
-      el.innerHTML = `<span class="hl-var">${name}</span> <span class="hl-op">∈</span> ${fmtDomain(dom)}`
+      const names = g.names.map((n) => `<span class="hl-var">${n}</span>`).join(', ')
+      el.innerHTML = `${names} <span class="hl-op">∈</span> ${fmtDomain(g.dom)}`
       typesEl.appendChild(el)
     }
 

@@ -255,14 +255,42 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     graph.edges.map((e) => [e.from, e.to] as const),
   )
   const view = new GraphView(ctx, graph, positions, semanticColors(level, graph, 0), nodeLabels(level, graph))
-  ctx.frameRadius(graphRadius(positions))
+  const graphRad = graphRadius(positions)
+  const CLOSE = Math.max(9, graphRad * 0.6) // distance de suivi (zoom rapproché)
+  const fullDist = graphRad * 1.85 + 5 // dézoom : tout l'espace d'états
+  ctx.frameRadius(graphRad)
+
+  // Suivi caméra : on colle à l'état courant tant que le joueur n'a pas
+  // pris la main. S'il oriente/zoome lui-même, on cesse de suivre et un
+  // bouton « recentrer » apparaît.
+  let userMoved = false
+  const recenterBtn = document.createElement('button')
+  recenterBtn.className = 'recenter-btn hidden'
+  recenterBtn.textContent = '⊙ recentrer'
+  app.appendChild(recenterBtn)
+
+  const tmpV = new THREE.Vector3()
+  const followCurrent = (): void => ctx.focusOn(view.nodePosition(currentNode(game, graph), tmpV), CLOSE)
+  const showWhole = (): void => ctx.focusOn(tmpV.set(0, 0, 0), fullDist)
+  const recenter = (): void => {
+    userMoved = false
+    recenterBtn.classList.add('hidden')
+    if (locked) showWhole()
+    else followCurrent()
+  }
+  recenterBtn.addEventListener('click', recenter)
+  ctx.controls.addEventListener('start', () => {
+    userMoved = true
+    recenterBtn.classList.remove('hidden')
+  })
+
   attachInspection(
     ctx,
     view,
     graph,
     hud,
     (i) => (graph.nodes[i].violating ? '<div class="badge bad">viole l’INVARIANT</div>' : ''),
-    { refocus: () => undefined, recenter: () => glideTo(currentNode(game, graph)) },
+    { refocus: () => undefined, recenter },
   )
 
   let game: Game = newGame(level.id)
@@ -290,12 +318,6 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     if (!graph.nodes[at].violating)
       for (const e of graph.successors[at]) map.set(graph.edges[e].action, e)
     return map
-  }
-
-  const glideTo = (node: number): void => {
-    const from = ctx.controls.target.clone()
-    const to = view.nodePosition(node, new THREE.Vector3())
-    ctx.addTween({ dur: 500, step: (k) => ctx.controls.target.lerpVectors(from, to, k) }, 'glide')
   }
 
   const refresh = (ghost = -1): void => {
@@ -356,9 +378,15 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     hud.setDeadlock(stuck)
     if (stuck && !wasStuck) audio.doom()
     wasStuck = stuck
-    // À la victoire, la secousse joue seule ; le glissement suit.
-    if (graph.nodes[at].violating) window.setTimeout(() => glideTo(at), 400)
-    else glideTo(at)
+    // Caméra : victoire → dézoom sur tout l'espace (après la secousse) ;
+    // sinon suivi rapproché de l'état courant tant que le joueur n'a pas bougé.
+    if (graph.nodes[at].violating) {
+      userMoved = false
+      recenterBtn.classList.add('hidden')
+      window.setTimeout(showWhole, 450)
+    } else if (!userMoved) {
+      followCurrent()
+    }
   }
 
   /** Jouer une action par son bouton. Tous les effets du pas. */
@@ -401,13 +429,18 @@ function setupTrace(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   window.addEventListener('keydown', keydown)
 
   refresh()
+  followCurrent() // zoom initial sur l'état de départ
 
   return {
     onReset: () => {
       game = newGame(level.id)
       prevState = null
       locked = false
+      mapDimmed = undefined
+      userMoved = false
+      recenterBtn.classList.add('hidden')
       refresh()
+      followCurrent()
     },
     onUndo: doUndo,
     onPlayAction: playByName,

@@ -357,6 +357,15 @@
       .victory .record { color: var(--gold); font-size: 12px; }
       .victory button { margin-top: 14px; }
 
+      .recenter-btn {
+        position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+        z-index: 18; padding: 5px 14px; border-radius: 999px;
+        background: rgba(9, 14, 26, 0.92); border: 1px solid var(--cyan);
+        color: var(--cyan); font: inherit; cursor: pointer;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
+      }
+      .recenter-btn:hover { background: var(--hover); }
+
       .hidden { display: none !important; }
     </style>
   </head>

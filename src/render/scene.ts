@@ -150,6 +150,30 @@ export class SceneCtx {
     this.controls.update()
   }
 
+  /**
+   * Glisse la caméra pour viser `target` à `distance`, en conservant la
+   * direction de vue actuelle (pas de saut d'orientation). Sert au suivi
+   * de l'état courant (zoom rapproché) et au dézoom final.
+   */
+  focusOn(target: THREE.Vector3, distance: number): void {
+    const dir = this.camera.position.clone().sub(this.controls.target)
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0.35, 1)
+    dir.normalize()
+    const fromT = this.controls.target.clone()
+    const fromC = this.camera.position.clone()
+    const toC = target.clone().addScaledVector(dir, distance)
+    this.addTween(
+      {
+        dur: 520,
+        step: (k) => {
+          this.controls.target.lerpVectors(fromT, target, k)
+          this.camera.position.lerpVectors(fromC, toC, k)
+        },
+      },
+      'glide',
+    )
+  }
+
   /** Arrêt propre (changement de niveau). */
   dispose(): void {
     this.renderer.setAnimationLoop(null)

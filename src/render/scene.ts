@@ -137,11 +137,16 @@ export class SceneCtx {
     })
   }
 
-  /** Cadre la caméra sur un graphe de rayon donné. */
+  /**
+   * Cadre la caméra sur un graphe de rayon donné. La barre du bas mange
+   * ~un tiers de la hauteur : on remonte le graphe en visant un point
+   * sous son centre (donc le centre apparaît plus haut à l'écran).
+   */
   frameRadius(radius: number): void {
     const d = Math.max(radius * 1.85 + 5, 12)
-    this.camera.position.set(0, radius * 0.32, d)
-    this.controls.target.set(0, 0, 0)
+    const lift = radius * 0.4
+    this.camera.position.set(0, radius * 0.32 - lift, d)
+    this.controls.target.set(0, -lift, 0)
     this.controls.update()
   }
 

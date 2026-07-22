@@ -93,7 +93,7 @@ export function layout(
     }
   }
   rms = Math.sqrt(rms / Math.max(n, 1))
-  const target = 6.5 * Math.cbrt(n / 10)
+  const target = 9 * Math.cbrt(n / 10)
   const scale = rms > 1e-6 ? target / rms : 1
   for (let i = 0; i < n * 3; i++) pos[i] *= scale
 

@@ -25,7 +25,7 @@ export interface Styles {
   readonly traceNodes?: ReadonlySet<number>
 }
 
-const NODE_RADIUS = 0.32
+const NODE_RADIUS = 0.22
 const ARROW_LEN = 0.16
 const EDGE_INSET = 0.4 // marge entre la ligne et le centre d'un nœud
 const UP = new THREE.Vector3(0, 1, 0)

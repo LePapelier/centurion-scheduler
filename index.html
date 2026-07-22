@@ -113,6 +113,25 @@
       }
       .commandbar .actionbar:empty { display: none; }
       .commandbar .actionbar .chip { padding: 6px 18px; font-size: 14px; }
+      /* Familles paramétrées : bouton « avancer » + rangée d'index dépliable. */
+      .afam { position: relative; }
+      .afam.open .chip.fam { border-color: var(--ac, var(--cyan)); background: var(--hover); }
+      .afam-params {
+        display: none; position: absolute; bottom: calc(100% + 6px); left: 50%;
+        transform: translateX(-50%); gap: 5px; padding: 5px;
+        background: rgba(7, 11, 20, 0.97); border: 1px solid var(--border);
+        border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); z-index: 40;
+      }
+      .afam.open .afam-params { display: flex; }
+      .chip.idx {
+        min-width: 34px; padding: 5px 0; justify-content: center;
+        border-radius: 7px; cursor: default; color: var(--dim);
+        background: #0d1526; border: 1px solid var(--border); font: inherit; font-size: 14px;
+      }
+      .chip.idx.enabled { color: var(--text); cursor: pointer; border-color: var(--orange); }
+      .chip.idx.enabled:hover { background: var(--hover); }
+      .chip.idx.played { animation: chip-tick 0.45s ease-out; }
+      .chip.idx.failing { color: var(--pink); border-color: var(--pink); }
       .commandbar .editor-mount { margin: 0 0 8px; }
       .commandbar .editor-mount:empty { display: none; }
 

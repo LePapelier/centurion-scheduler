@@ -62,6 +62,9 @@ export interface Brick {
 export class Hud {
   private readonly varEls = new Map<string, HTMLElement>()
   private readonly actionEls = new Map<string, HTMLElement>()
+  private readonly famEls = new Map<string, HTMLElement>()
+  /** Instances par famille (pour allumer le bouton de famille). */
+  private readonly famInstances = new Map<string, string[]>()
   private readonly invEl: HTMLElement | null
   private readonly movesEl: HTMLElement
   private readonly deadlockEl: HTMLElement
@@ -196,28 +199,8 @@ export class Hud {
       this.varEls.set(v, el)
     }
 
-    // Trace : les actions SONT l'input, au centre de la barre. Prove : référence dans le panneau.
-    const actionsEl =
-      level.mode === 'trace' ? bar.querySelector('.actionbar')! : panel.querySelector('.actions')!
-    for (const a of level.actionsSrc) {
-      const el = document.createElement('button')
-      el.className = 'chip action'
-      el.textContent = a.name
-      // Pastille de couleur = teinte de l'action sur le graphe (légende).
-      const ac = cb.actionColor?.get(a.name)
-      if (ac !== undefined) {
-        el.style.setProperty('--ac', ac)
-        const dot = document.createElement('span')
-        dot.className = 'ac-dot'
-        el.prepend(dot)
-      }
-      el.addEventListener('click', () => {
-        if (level.mode === 'trace') {
-          if (el.classList.contains('enabled')) cb.onPlayAction?.(a.name)
-        } else {
-          cb.onInsertAction?.(a.name)
-        }
-      })
+    // Popover garde/effet au survol d'une action.
+    const hoverAction = (el: HTMLElement, a: (typeof level.actionsSrc)[number]): void => {
       el.addEventListener('mouseenter', () => {
         this.popoverEl.innerHTML = `
           <div class="pop-name">${a.name}</div>
@@ -226,20 +209,105 @@ export class Hud {
         this.popoverEl.classList.remove('hidden')
         const r = el.getBoundingClientRect()
         this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 380)}px`
-        // Dans la barre du bas, le popover s'ouvre vers le haut.
-        if (level.mode === 'trace') {
-          this.popoverEl.style.top = `${r.top - this.popoverEl.offsetHeight - 8}px`
-        } else {
-          this.popoverEl.style.top = `${r.bottom + 6}px`
-        }
+        this.popoverEl.style.top =
+          level.mode === 'trace'
+            ? `${r.top - this.popoverEl.offsetHeight - 8}px`
+            : `${r.bottom + 6}px`
         cb.onHoverAction?.(a.name)
       })
       el.addEventListener('mouseleave', () => {
         this.popoverEl.classList.add('hidden')
         cb.onHoverAction?.(null)
       })
-      actionsEl.appendChild(el)
-      this.actionEls.set(a.name, el)
+    }
+    const tint = (el: HTMLElement, name: string): void => {
+      const ac = cb.actionColor?.get(name)
+      if (ac === undefined) return
+      el.style.setProperty('--ac', ac)
+      const dot = document.createElement('span')
+      dot.className = 'ac-dot'
+      el.prepend(dot)
+    }
+
+    if (level.mode === 'trace') {
+      // Actions au centre, GROUPÉES PAR FAMILLE : on choisit « avancer »,
+      // puis l'index 0/1/2. Les actions sans famille restent des boutons directs.
+      const bar2 = bar.querySelector('.actionbar')!
+      const families = new Map<string, (typeof level.actionsSrc)[number][]>()
+      const order: (string | (typeof level.actionsSrc)[number])[] = []
+      for (const a of level.actionsSrc) {
+        if (a.family !== undefined) {
+          if (!families.has(a.family)) {
+            families.set(a.family, [])
+            order.push(a.family)
+          }
+          families.get(a.family)!.push(a)
+        } else order.push(a)
+      }
+      for (const item of order) {
+        if (typeof item !== 'string') {
+          // Action simple.
+          const el = document.createElement('button')
+          el.className = 'chip action'
+          el.textContent = item.name
+          tint(el, item.name)
+          el.addEventListener('click', () => {
+            if (el.classList.contains('enabled')) cb.onPlayAction?.(item.name)
+          })
+          hoverAction(el, item)
+          bar2.appendChild(el)
+          this.actionEls.set(item.name, el)
+          continue
+        }
+        // Famille : bouton + rangée d'index dépliable.
+        const insts = families.get(item)!
+        const group = document.createElement('div')
+        group.className = 'afam'
+        const famBtn = document.createElement('button')
+        famBtn.className = 'chip action fam'
+        famBtn.textContent = item
+        tint(famBtn, insts[0].name)
+        const params = document.createElement('div')
+        params.className = 'afam-params'
+        famBtn.addEventListener('click', () => {
+          const open = group.classList.toggle('open')
+          bar2.querySelectorAll('.afam.open').forEach((g) => {
+            if (g !== group) g.classList.remove('open')
+          })
+          if (open) group.classList.add('open')
+        })
+        this.famEls.set(item, famBtn)
+        this.famInstances.set(item, insts.map((a) => a.name))
+        for (const a of insts) {
+          const idx = document.createElement('button')
+          idx.className = 'chip idx'
+          idx.textContent = String(a.param)
+          idx.addEventListener('click', () => {
+            if (idx.classList.contains('enabled')) {
+              cb.onPlayAction?.(a.name)
+              group.classList.remove('open')
+            }
+          })
+          hoverAction(idx, a)
+          params.appendChild(idx)
+          this.actionEls.set(a.name, idx)
+        }
+        group.append(famBtn, params)
+        bar2.appendChild(group)
+      }
+    } else {
+      // Prove : référence plate dans le panneau (clic → ajoute au corps).
+      const actionsEl = panel.querySelector('.actions')!
+      for (const a of level.actionsSrc) {
+        const el = document.createElement('button')
+        el.className = 'chip action'
+        el.textContent = a.name
+        tint(el, a.name)
+        el.addEventListener('click', () => cb.onInsertAction?.(a.name))
+        hoverAction(el, a)
+        actionsEl.appendChild(el)
+        this.actionEls.set(a.name, el)
+      }
     }
 
     // Prove : les pièces élémentaires — le vocabulaire des candidates.
@@ -310,6 +378,10 @@ export class Hud {
 
   setEnabledActions(names: ReadonlySet<string>): void {
     for (const [name, el] of this.actionEls) el.classList.toggle('enabled', names.has(name))
+    // Un bouton de famille s'allume si au moins une de ses instances est jouable.
+    for (const [fam, insts] of this.famInstances) {
+      this.famEls.get(fam)?.classList.toggle('enabled', insts.some((n) => names.has(n)))
+    }
   }
 
   /** Fait « tiquer » le jeton d'une action qui vient d'être jouée. */

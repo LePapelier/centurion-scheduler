@@ -380,8 +380,14 @@ function substituteParam(body: string, param: string, value: number): string {
  * ACTION, ATOM, LEMMA et aux déclarations de variables `pc[i ∈ {0,1}] …`.
  * Un seul paramètre par déclaration ; valeurs entières (index de nom).
  */
-export function expandParametric(src: string): string {
+export interface ParamMeta {
+  readonly family: string
+  readonly param: number
+}
+
+export function expandParametric(src: string): { text: string; meta: Map<string, ParamMeta> } {
   const out: string[] = []
+  const meta = new Map<string, ParamMeta>()
   let inVariables = false
   const decl = /^(\s*)(ACTION|ATOM|LEMMA)\s+(\w+)\(\s*(\w+)\s*(?:∈|\\in)\s*\{([^}]*)\}\s*\)\s*(≜|==)\s*(.*)$/
   const varFam = /^(\s*)(\w+)\[\s*(\w+)\s*(?:∈|\\in)\s*\{([^}]*)\}\s*\]\s*(.*)$/
@@ -399,6 +405,7 @@ export function expandParametric(src: string): string {
         const val = Number(v)
         if (!Number.isInteger(val)) throw new Error(`${dir} ${nom} : index non entier « ${v} »`)
         out.push(`${indent}${dir} ${nom}${val} ${eq} ${substituteParam(body, param, val)}`)
+        meta.set(`${nom}${val}`, { family: nom, param: val })
       }
       continue
     }
@@ -416,13 +423,13 @@ export function expandParametric(src: string): string {
     }
     out.push(raw)
   }
-  return out.join('\n')
+  return { text: out.join('\n'), meta }
 }
 
 // ——— Compilation d'un niveau ———
 
 export function compileLevel(rawSrc: string): CompiledLevel {
-  const src = expandParametric(rawSrc)
+  const { text: src, meta: paramMeta } = expandParametric(rawSrc)
   let id = ''
   let name = ''
   const desc: string[] = []
@@ -595,7 +602,13 @@ export function compileLevel(rawSrc: string): CompiledLevel {
     actions: compiledActions,
     invariant: invFn,
     invariantExpr: inv,
-    actionsSrc: actions.map((a) => ({ name: a.name, guardSrc: a.guardSrc, updateSrc: a.updateSrc })),
+    actionsSrc: actions.map((a) => ({
+      name: a.name,
+      guardSrc: a.guardSrc,
+      updateSrc: a.updateSrc,
+      family: paramMeta.get(a.name)?.family,
+      param: paramMeta.get(a.name)?.param,
+    })),
     invariantSrc,
     labelVars: labelVars.length > 0 ? labelVars : Object.keys(init),
     colorValue: colorExpr ? (s) => num(evalExpr(colorExpr, s), 0) : undefined,

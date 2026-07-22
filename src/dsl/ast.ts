@@ -32,6 +32,9 @@ export interface CompiledLevel extends Level {
     readonly name: string
     readonly guardSrc: string
     readonly updateSrc: string
+    /** Si issue d'une famille paramétrée : nom de base et valeur d'index. */
+    readonly family?: string
+    readonly param?: number
   }[]
   readonly invariantSrc: string
   /** Variables à afficher en étiquette de nœud (directive LABEL). */

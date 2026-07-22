@@ -43,7 +43,8 @@ function actionPalette(level: CompiledLevel): Map<string, THREE.Color> {
   const m = new Map<string, THREE.Color>()
   names.forEach((name, i) => {
     const c = new THREE.Color()
-    c.setHSL((i / Math.max(names.length, 1) + 0.02) % 1, 0.62, 0.62)
+    // Couleurs assez profondes pour que le premier mélange colore franchement.
+    c.setHSL((i / Math.max(names.length, 1) + 0.02) % 1, 0.72, 0.52)
     m.set(name, c)
   })
   return m
@@ -63,6 +64,7 @@ function semanticColors(level: CompiledLevel, graph: Graph, init: number): THREE
   const palette = actionPalette(level)
   const white = new THREE.Color(0xf7faff)
   const acc: (THREE.Color | null)[] = graph.nodes.map(() => null)
+  const depth: number[] = graph.nodes.map(() => 0)
   acc[init] = white.clone()
   const queue = [init]
   for (let head = 0; head < queue.length; head++) {
@@ -71,7 +73,11 @@ function semanticColors(level: CompiledLevel, graph: Graph, init: number): THREE
       const to = graph.edges[e].to
       if (acc[to] !== null) continue
       const tint = palette.get(graph.edges[e].action) ?? white
-      acc[to] = acc[at]!.clone().lerp(tint, 0.42)
+      depth[to] = depth[at] + 1
+      // Incrément décroissant : fort près du départ, faible au loin — les
+      // états profonds sont franchement colorés au lieu de virer au blanc.
+      const strength = 0.62 / (1 + 0.5 * depth[at])
+      acc[to] = acc[at]!.clone().lerp(tint, strength)
       queue.push(to)
     }
   }

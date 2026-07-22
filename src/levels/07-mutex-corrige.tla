@@ -2,7 +2,7 @@ LEVEL p2-mutex-corrige
 NAME Le mutex corrigé
 MODE prove
 DESC Le mutex corrigé tient. Prouvez-le.
-GOAL Une brique miroir C1, puis la règle.
+GOAL Chaque « crit » lève son drapeau — les deux, puis la règle.
 
 VARIABLES
   pc0 ∈ {"idle", "ready", "crit"} = "idle"
@@ -23,6 +23,5 @@ ATOM Flag0 ≜ flag0 = 1
 ATOM Flag1 ≜ flag1 = 1
 
 INVARIANT ¬(Crit0 ∧ Crit1)
-LEMMA C0 ≜ Crit0 ⇒ Flag0
 COLOR (pc0 = "crit") + (pc1 = "crit")
 LABEL pc0, pc1

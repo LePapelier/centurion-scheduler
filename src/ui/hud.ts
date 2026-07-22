@@ -124,7 +124,10 @@ export class Hud {
     // Barre de commande : saisie, briques et feedback, centrées en bas.
     const bar = document.createElement('div')
     bar.className = 'commandbar'
+    // L'éditeur est EN HAUT de la barre : son menu d'autocomplétion s'ouvre
+    // vers le haut, dans la zone du graphe (vide), sans masquer les briques.
     bar.innerHTML = `
+      <div class="editor-mount"></div>
       ${
         level.mode === 'prove'
           ? `<div class="bricks"><div class="kw">BRIQUES</div><div class="bricks-list"></div></div>
@@ -137,12 +140,9 @@ export class Hud {
       <div class="status"></div>
       <div class="hint"></div>
       <div class="trace"></div>
-      <div class="editor-row">
-        <div class="editor-mount"></div>
-        <div class="buttons">
-          <button data-act="undo">← annuler</button>
-          <button data-act="reset">réinitialiser</button>
-        </div>
+      <div class="buttons">
+        <button data-act="undo">← annuler</button>
+        <button data-act="reset">réinitialiser</button>
       </div>`
     root.appendChild(bar)
 

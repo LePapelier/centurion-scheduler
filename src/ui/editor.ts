@@ -156,6 +156,9 @@ export class FormulaEditor {
           keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]),
           autocompletion({
             activateOnTyping: true,
+            // La barre est en bas d'écran : le menu s'ouvre vers le HAUT
+            // (au-dessus de l'éditeur, là où il y a de la place).
+            aboveCursor: true,
             override: [
               (ctx: CompletionContext) => {
                 const word = ctx.matchBefore(/(?:"[A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)$/)

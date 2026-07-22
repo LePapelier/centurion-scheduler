@@ -661,7 +661,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
         }
         const useful = bricks.filter((b) => need.has(b.name) && !b.given)
         const score = useful.reduce((n, b) => n + countTokens(b.src), 0)
-        const wall = useful.map((b) => `□ ${b.name} ≜ ${hl(b.src)}`).join('<br>')
+        const wall = useful.map((b) => `□ ${b.name} : ${hl(b.src)}`).join('<br>')
         const extra = bricks.filter((b) => !b.given).length - useful.length
         // Vague sur les états atteignables, puis la victoire.
         view.sweep(space.reachable, space.init)

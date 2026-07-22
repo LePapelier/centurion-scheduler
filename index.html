@@ -227,7 +227,16 @@
       }
       .popover .kw { color: var(--cyan); font-weight: 600; }
       .popover .aname { color: var(--orange); font-weight: 600; }
-      .popover .arrow { color: var(--muted); }
+      .popover .pop-def { color: var(--muted); margin-left: 4px; }
+      .pop-name { color: var(--orange); font-weight: 600; margin-bottom: 4px; }
+      .pop-row { display: flex; gap: 8px; align-items: baseline; margin: 2px 0; }
+      .pop-tag {
+        flex: 0 0 auto; width: 3.4em; text-align: right;
+        font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+      }
+      .pop-tag.guard { color: var(--green); }
+      .pop-tag.effect { color: var(--gold); }
+      .brick .def-sep { color: var(--dim); }
 
       .fly {
         position: fixed; z-index: 60; pointer-events: none; color: var(--gold);

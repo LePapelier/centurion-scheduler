@@ -219,7 +219,10 @@ export class Hud {
         }
       })
       el.addEventListener('mouseenter', () => {
-        this.popoverEl.innerHTML = `<span class="kw">ACTION</span> <span class="aname">${a.name}</span> ≜ ${hl(a.guardSrc)} <span class="arrow">→</span> ${hl(a.updateSrc)}`
+        this.popoverEl.innerHTML = `
+          <div class="pop-name">${a.name}</div>
+          <div class="pop-row"><span class="pop-tag guard">QUAND</span> ${hl(a.guardSrc)}</div>
+          <div class="pop-row"><span class="pop-tag effect">FAIT</span> ${hl(a.updateSrc)}</div>`
         this.popoverEl.classList.remove('hidden')
         const r = el.getBoundingClientRect()
         this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 380)}px`
@@ -247,7 +250,7 @@ export class Hud {
       el.textContent = a.name
       el.addEventListener('click', () => cb.onInsertAction?.(a.name))
       el.addEventListener('mouseenter', () => {
-        this.popoverEl.innerHTML = `<span class="aname">${a.name}</span> ≜ ${hl(a.src)}`
+        this.popoverEl.innerHTML = `<span class="aname">${a.name}</span> <span class="pop-def">${hl(a.src)}</span>`
         this.popoverEl.classList.remove('hidden')
         const r = el.getBoundingClientRect()
         this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 380)}px`
@@ -333,7 +336,7 @@ export class Hud {
       .map(
         (b) => `
         <div class="brick${b.given ? ' given' : ''}">
-          <span class="box">□</span> <span class="bname">${b.name}</span> ≜ <span class="src">${hl(b.src)}</span>
+          <span class="box">□</span> <span class="bname">${b.name}</span> <span class="def-sep">:</span> <span class="src">${hl(b.src)}</span>
           ${b.given ? '<span class="tag">donnée</span>' : ''}
           ${b.deletable === true ? `<button class="bdel" data-name="${b.name}" title="supprimer">✕</button>` : ''}
           ${b.deps.length > 0 ? `<div class="deps">└ s'appuie sur : ${b.deps.map((d) => `<span class="dep">${d}</span>`).join(' · ')}</div>` : ''}

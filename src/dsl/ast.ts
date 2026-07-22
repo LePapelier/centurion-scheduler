@@ -40,6 +40,10 @@ export interface CompiledLevel extends Level {
   colorValue?(s: State): number
 
   readonly mode: LevelMode
+  /** AST de l'invariant (écrit dans le vocabulaire des pièces, déjà substitué). */
+  readonly invariantExpr: Expr
+  /** MODE prove : pièces élémentaires nommées — le seul vocabulaire des candidates. */
+  readonly atoms: readonly { readonly name: string; readonly src: string; readonly expr: Expr }[]
   /** MODE prove : briques de départ nommées (lemmes donnés, supposés prouvés). */
   readonly lemmas: readonly { readonly name: string; readonly src: string; readonly expr: Expr }[]
   /** Paragraphes du tuto (directive TUTORIAL, répétable). */

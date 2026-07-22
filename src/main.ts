@@ -1,4 +1,3 @@
-import type { Completion } from '@codemirror/autocomplete'
 import * as THREE from 'three'
 import { explore, type Graph } from './core/explore'
 import { buildFullSpace, type FullSpace } from './core/fullspace'
@@ -13,7 +12,7 @@ import { color } from './render/palette'
 import { SceneCtx } from './render/scene'
 import { audio } from './ui/audio'
 import { loadProgress, recordScore, saveProgress, unlock } from './ui/campaign'
-import { FormulaEditor, OPERATOR_COMPLETIONS } from './ui/editor'
+import { FormulaEditor } from './ui/editor'
 import { hl, hlValue } from './ui/highlight'
 import { Hud, type Brick } from './ui/hud'
 import { runTour } from './ui/tour'
@@ -56,20 +55,6 @@ function semanticColors(level: CompiledLevel, graph: Graph): THREE.Color[] {
 
 function nodeLabels(level: CompiledLevel, graph: Graph): string[] {
   return graph.nodes.map((n) => level.labelVars.map((v) => String(n.state[v])).join('·'))
-}
-
-function formulaCompletions(level: CompiledLevel): Completion[] {
-  const out: Completion[] = Object.keys(level.init).map((v) => ({ label: v, type: 'variable' }))
-  const seen = new Set<string>()
-  for (const dom of level.domains.values())
-    for (const v of dom) {
-      const label = JSON.stringify(v)
-      if (!seen.has(label)) {
-        seen.add(label)
-        out.push({ label, type: 'constant' })
-      }
-    }
-  return [...out, ...OPERATOR_COMPLETIONS]
 }
 
 const EMPTY = new Set<number>()
@@ -474,7 +459,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     },
   )
 
-  const goal = parseExpr(level.invariantSrc)
+  const goal = level.invariantExpr
   const faint = new Set<number>()
   for (let i = 0; i < graph.nodes.length; i++) if (!space.reachable.has(i)) faint.add(i)
 
@@ -489,8 +474,38 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   let lastRegionKey = ''
   let aliasUsedFired = false
 
-  /** Alias : chaque brique est réutilisable par son nom dans les formules. */
-  const aliases = (): Map<string, Expr> => new Map(bricks.map((b) => [b.name, b.expr]))
+  /** Vocabulaire : pièces élémentaires du niveau + briques acquises. */
+  const pieces = (): Map<string, Expr> =>
+    new Map([
+      ...level.atoms.map((a) => [a.name, a.expr] as const),
+      ...bricks.map((b) => [b.name, b.expr] as const),
+    ])
+
+  /**
+   * Une candidate s'ASSEMBLE à partir des pièces : identifiants connus et
+   * connecteurs logiques seulement — ni variables brutes, ni littéraux,
+   * ni comparaisons (elles vivent dans les pièces).
+   */
+  const validatePieces = (e: Expr): void => {
+    switch (e.kind) {
+      case 'num':
+      case 'str':
+        throw new Error('littéraux interdits — assemblez les pièces données')
+      case 'var':
+        if (!pieces().has(e.name)) throw new Error(`pièce inconnue « ${e.name} »`)
+        return
+      case 'not':
+        validatePieces(e.arg)
+        return
+      case 'bin':
+        if (e.op === 'and' || e.op === 'or' || e.op === 'implies') {
+          validatePieces(e.left)
+          validatePieces(e.right)
+          return
+        }
+        throw new Error('seuls ∧ ∨ ¬ ⇒ sont permis — les comparaisons vivent dans les pièces')
+    }
+  }
 
   /** Une brique est supprimable si aucune autre ne mentionne son nom.
    *  (Gating : le ✕ n'apparaît qu'à partir du niveau des alias.) */
@@ -510,20 +525,22 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   const autoName = (): string => {
     for (let i = bricks.length + 1; ; i++) {
       const name = `L${i}`
-      if (!bricks.some((b) => b.name === name) && level.init[name] === undefined) return name
+      if (!pieces().has(name) && level.init[name] === undefined) return name
     }
   }
 
-  /** « nom ≜ formule » ou formule nue ; alias substitués. Lève si invalide. */
+  /** « nom ≜ assemblage » ou assemblage nu ; pièces substituées. Lève si invalide. */
   const parseCandidate = (text: string): { name: string | null; src: string; expr: Expr } => {
     const m = text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(?:≜|==)\s*(.+)$/)
     const name = m?.[1] ?? null
     const src = m?.[2].trim() ?? text
     if (name !== null) {
       if (level.init[name] !== undefined) throw new Error(`« ${name} » est une variable`)
-      if (bricks.some((b) => b.name === name)) throw new Error(`brique « ${name} » déjà prise`)
+      if (pieces().has(name)) throw new Error(`« ${name} » est déjà pris`)
     }
-    return { name, src, expr: substituteAliases(parseExpr(src), aliases()) }
+    const parsed = parseExpr(src)
+    validatePieces(parsed)
+    return { name, src, expr: substituteAliases(parsed, pieces()) }
   }
 
   const baseStyles = {
@@ -594,12 +611,20 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     return report
   }
 
+  const LOGIC_OPS = [
+    { label: '∧', detail: '/\\  et', apply: '∧ ', type: 'keyword' },
+    { label: '∨', detail: '\\/  ou', apply: '∨ ', type: 'keyword' },
+    { label: '¬', detail: '~  non', apply: '¬', type: 'keyword' },
+    { label: '⇒', detail: '=>  implique', apply: '⇒ ', type: 'keyword' },
+  ]
+
   const editor = new FormulaEditor({
     parent: hud.editorMount,
-    placeholder: 'formule, ou nom ≜ formule — les noms de briques sont réutilisables',
+    placeholder: 'assemblez les pièces : ∧ ∨ ¬ ⇒ — « nom ≜ assemblage » pour nommer',
     completions: () => [
+      ...level.atoms.map((a) => ({ label: a.name, detail: a.src, type: 'variable', boost: 1 })),
       ...bricks.map((b) => ({ label: b.name, detail: `□ ${b.src}`, type: 'class', boost: 2 })),
-      ...formulaCompletions(level),
+      ...LOGIC_OPS,
     ],
     onChange: (text) => {
       if (locked) return

@@ -28,8 +28,8 @@ describe('campagne', () => {
 describe('fullspace', () => {
   it('énumère le produit des domaines et marque les atteignables', () => {
     const space = buildFullSpace(byId('p1-fusible-sur'))
-    expect(space.graph.nodes.length).toBe(4) // charge ∈ {0,1,2,3}
-    expect(space.reachable.size).toBe(3) // 3 inatteignable
+    expect(space.graph.nodes.length).toBe(5) // charge ∈ {0..4}
+    expect(space.reachable.size).toBe(3) // 3 et 4 inatteignables
     expect(space.graph.nodes[space.init].state).toEqual({ charge: 0 })
   })
 
@@ -54,18 +54,25 @@ describe('checkCandidate (fusible sûr)', () => {
   it('charge ≤ 2 : inductive, et implique l’objectif', () => {
     const r = checkCandidate(space, [], parseExpr('charge ≤ 2'))
     expect(r.ok).toBe(true)
-    expect(impliesGoal(space, [parseExpr('charge ≤ 2')], parseExpr('charge < 3'))).toBe(true)
+    expect(impliesGoal(space, [parseExpr('charge ≤ 2')], parseExpr('charge ≠ 3'))).toBe(true)
   })
 
   it('sans brique, rien n’implique l’objectif', () => {
-    expect(impliesGoal(space, [], parseExpr('charge < 3'))).toBe(false)
+    expect(impliesGoal(space, [], parseExpr('charge ≠ 3'))).toBe(false)
+  })
+
+  it('ANTI-COPIE : recopier la règle fuit (vent : 4 → 3 chez les fantômes)', () => {
+    const r = checkCandidate(space, [], byId('p1-fusible-sur').invariantExpr)
+    expect(r.initOk).toBe(true)
+    expect(r.ctis.length).toBeGreaterThan(0)
+    expect(space.graph.edges[r.ctis[0]].action).toBe('vent')
   })
 })
 
 describe('checkCandidate (mutex corrigé)', () => {
   const level = byId('p2-mutex-corrige')
   const space = buildFullSpace(level)
-  const goal = parseExpr(level.invariantSrc)
+  const goal = level.invariantExpr
   const A0 = parseExpr('pc0 = "crit" ⇒ flag0 = 1')
   const A1 = parseExpr('pc1 = "crit" ⇒ flag1 = 1')
 
@@ -124,7 +131,7 @@ describe('alias de briques', () => {
 describe('checkCandidate (Peterson)', () => {
   const level = byId('p3-peterson')
   const space = buildFullSpace(level)
-  const goal = parseExpr(level.invariantSrc)
+  const goal = level.invariantExpr
   const givens = level.lemmas.map((l) => l.expr) // A0, A1 donnés
   const T0 = parseExpr('pc0 = "crit" ∧ pc1 = "wait" ⇒ turn = 0')
   const T1 = parseExpr('pc1 = "crit" ∧ pc0 = "wait" ⇒ turn = 1')

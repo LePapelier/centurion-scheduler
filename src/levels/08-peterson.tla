@@ -20,8 +20,19 @@ ACTION defer1 ≜ pc1 = "want" → pc1 := "wait" ∧ turn := 0
 ACTION enter1 ≜ pc1 = "wait" ∧ (flag0 = 0 ∨ turn = 1) → pc1 := "crit"
 ACTION exit1  ≜ pc1 = "crit" → pc1 := "idle" ∧ flag1 := 0
 
-INVARIANT ¬(pc0 = "crit" ∧ pc1 = "crit")
-LEMMA F0 ≜ pc0 ≠ "idle" ⇒ flag0 = 1
-LEMMA F1 ≜ pc1 ≠ "idle" ⇒ flag1 = 1
+ATOM Crit0 ≜ pc0 = "crit"
+ATOM Crit1 ≜ pc1 = "crit"
+ATOM Wait0 ≜ pc0 = "wait"
+ATOM Wait1 ≜ pc1 = "wait"
+ATOM Idle0 ≜ pc0 = "idle"
+ATOM Idle1 ≜ pc1 = "idle"
+ATOM Flag0 ≜ flag0 = 1
+ATOM Flag1 ≜ flag1 = 1
+ATOM Tour0 ≜ turn = 0
+ATOM Tour1 ≜ turn = 1
+
+INVARIANT ¬(Crit0 ∧ Crit1)
+LEMMA F0 ≜ ¬Idle0 ⇒ Flag0
+LEMMA F1 ≜ ¬Idle1 ⇒ Flag1
 COLOR (pc0 = "crit") + (pc1 = "crit")
 LABEL pc0, pc1, turn

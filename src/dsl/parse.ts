@@ -316,7 +316,10 @@ export function compileLevel(src: string): CompiledLevel {
   let colorExpr: Expr | null = null
   let labelVars: string[] = []
   let mode: 'trace' | 'prove' = 'trace'
+  const atoms: { name: string; src: string; expr: Expr }[] = []
   const lemmas: { name: string; src: string; expr: Expr }[] = []
+  /** Alias accumulés (pièces puis lemmes) : le vocabulaire des directives suivantes. */
+  const aliasEnv = new Map<string, Expr>()
   const tutorial: string[] = []
   let goal = ''
   let inVariables = false
@@ -330,7 +333,7 @@ export function compileLevel(src: string): CompiledLevel {
     const kw = line.split(/\s+/, 1)[0]
     const rest = line.slice(kw.length).trim()
     const KEYWORDS = ['LEVEL', 'NAME', 'DESC', 'VARIABLES', 'ACTION', 'INVARIANT', 'COLOR', 'LABEL',
-      'MODE', 'LEMMA', 'TUTORIAL', 'GOAL']
+      'MODE', 'ATOM', 'LEMMA', 'TUTORIAL', 'GOAL']
     if (KEYWORDS.includes(kw)) inVariables = kw === 'VARIABLES'
 
     switch (kw) {
@@ -358,14 +361,14 @@ export function compileLevel(src: string): CompiledLevel {
       }
       case 'INVARIANT': {
         const p = new P(tokenize(rest, lineNo), lineNo)
-        invariant = p.expr()
+        invariant = substituteAliases(p.expr(), aliasEnv)
         if (!p.atEnd()) throw new Error(`ligne ${lineNo} : « ${p.peek()!.text} » inattendu`)
         invariantSrc = rest
         break
       }
       case 'COLOR': {
         const p = new P(tokenize(rest, lineNo), lineNo)
-        colorExpr = p.expr()
+        colorExpr = substituteAliases(p.expr(), aliasEnv)
         break
       }
       case 'LABEL':
@@ -376,20 +379,19 @@ export function compileLevel(src: string): CompiledLevel {
           throw new Error(`ligne ${lineNo} : MODE trace|prove attendu`)
         mode = rest
         break
+      case 'ATOM':
       case 'LEMMA': {
         const m = rest.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(≜|==)\s*(.*)$/)
-        if (!m) throw new Error(`ligne ${lineNo} : attendu « LEMMA nom ≜ formule »`)
+        if (!m) throw new Error(`ligne ${lineNo} : attendu « ${kw} nom ≜ formule »`)
         const p = new P(tokenize(m[3], lineNo), lineNo)
         const parsed = p.expr()
         if (!p.atEnd()) throw new Error(`ligne ${lineNo} : « ${p.peek()!.text} » inattendu`)
-        // Un lemme peut réutiliser les alias des lemmes précédents.
-        const expr = substituteAliases(
-          parsed,
-          new Map(lemmas.map((l) => [l.name, l.expr])),
-        )
-        if (lemmas.some((l) => l.name === m[1]))
-          throw new Error(`ligne ${lineNo} : brique « ${m[1]} » déjà définie`)
-        lemmas.push({ name: m[1], src: m[3], expr })
+        // Pièces et lemmes peuvent réutiliser les alias déjà définis.
+        const expr = substituteAliases(parsed, aliasEnv)
+        if (aliasEnv.has(m[1]))
+          throw new Error(`ligne ${lineNo} : « ${m[1]} » déjà défini`)
+        aliasEnv.set(m[1], expr)
+        ;(kw === 'ATOM' ? atoms : lemmas).push({ name: m[1], src: m[3], expr })
         break
       }
       case 'TUTORIAL':
@@ -427,9 +429,9 @@ export function compileLevel(src: string): CompiledLevel {
   if (id === '') throw new Error('directive LEVEL manquante')
   if (actions.length === 0) throw new Error('aucune ACTION déclarée')
   if (invariant === null) throw new Error('directive INVARIANT manquante')
-  for (const lemma of lemmas)
-    if (init[lemma.name] !== undefined)
-      throw new Error(`LEMMA « ${lemma.name} » : nom déjà pris par une variable`)
+  for (const [aliasName] of aliasEnv)
+    if (init[aliasName] !== undefined)
+      throw new Error(`« ${aliasName} » : nom déjà pris par une variable`)
   if (mode === 'prove')
     // L'induction quantifie sur l'espace COMPLET : chaque variable doit
     // avoir un domaine déclaré pour qu'on puisse l'énumérer.
@@ -474,11 +476,13 @@ export function compileLevel(src: string): CompiledLevel {
     init,
     actions: compiledActions,
     invariant: invFn,
+    invariantExpr: inv,
     actionsSrc: actions.map((a) => ({ name: a.name, guardSrc: a.guardSrc, updateSrc: a.updateSrc })),
     invariantSrc,
     labelVars: labelVars.length > 0 ? labelVars : Object.keys(init),
     colorValue: colorExpr ? (s) => num(evalExpr(colorExpr, s), 0) : undefined,
     mode,
+    atoms,
     lemmas,
     tutorial,
     goal,

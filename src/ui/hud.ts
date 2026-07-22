@@ -106,6 +106,7 @@ export class Hud {
       <div class="spec">
         <div class="chips vars"></div>
         <div class="chips actions"></div>
+        <div class="chips atoms"></div>
         <div class="rule ${level.mode === 'trace' ? 'break' : 'prove'}"><span class="rule-tag">${
           level.mode === 'trace' ? 'règle à briser' : 'règle à garantir'
         }</span> <span class="src">${hl(level.invariantSrc)}</span></div>
@@ -222,6 +223,24 @@ export class Hud {
       })
       actionsEl.appendChild(el)
       this.actionEls.set(a.name, el)
+    }
+
+    // Prove : les pièces élémentaires — le vocabulaire des candidates.
+    const atomsEl = panel.querySelector('.atoms')!
+    for (const a of level.atoms) {
+      const el = document.createElement('button')
+      el.className = 'chip atom'
+      el.textContent = a.name
+      el.addEventListener('click', () => cb.onInsertAction?.(a.name))
+      el.addEventListener('mouseenter', () => {
+        this.popoverEl.innerHTML = `<span class="aname">${a.name}</span> ≜ ${hl(a.src)}`
+        this.popoverEl.classList.remove('hidden')
+        const r = el.getBoundingClientRect()
+        this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 380)}px`
+        this.popoverEl.style.top = `${r.bottom + 6}px`
+      })
+      el.addEventListener('mouseleave', () => this.popoverEl.classList.add('hidden'))
+      atomsEl.appendChild(el)
     }
 
     this.invEl = panel.querySelector('.rule')

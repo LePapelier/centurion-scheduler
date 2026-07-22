@@ -17,7 +17,12 @@ ACTION check1 ≜ pc1 = "idle" ∧ flag0 = 0 → pc1 := "ready"
 ACTION enter1 ≜ pc1 = "ready" ∧ flag0 = 0 → pc1 := "crit" ∧ flag1 := 1
 ACTION exit1  ≜ pc1 = "crit" → pc1 := "idle" ∧ flag1 := 0
 
-INVARIANT ¬(pc0 = "crit" ∧ pc1 = "crit")
-LEMMA C0 ≜ pc0 = "crit" ⇒ flag0 = 1
+ATOM Crit0 ≜ pc0 = "crit"
+ATOM Crit1 ≜ pc1 = "crit"
+ATOM Flag0 ≜ flag0 = 1
+ATOM Flag1 ≜ flag1 = 1
+
+INVARIANT ¬(Crit0 ∧ Crit1)
+LEMMA C0 ≜ Crit0 ⇒ Flag0
 COLOR (pc0 = "crit") + (pc1 = "crit")
 LABEL pc0, pc1

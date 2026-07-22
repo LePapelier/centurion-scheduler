@@ -49,18 +49,23 @@ export const tours: Record<string, readonly TourStep[]> = {
       gate: 'next',
     },
     {
+      target: '.atoms',
+      html: 'Vos <b>pièces</b>. Survolez-les : chacune est un morceau de vérité à assembler.',
+      gate: 'next',
+    },
+    {
       target: '.editor-mount',
-      html: 'Tapez <code>charge <= 1</code> et regardez le graphe.',
+      html: 'Tapez <code>¬Grille</code> — la copie de la règle.',
       gate: 'ds:cti-shown',
     },
     {
       target: '#app canvas',
-      html: 'Une <b>fuite</b> : une action s’échappe de votre formule. Élargissez : <code>charge <= 2</code> ↵',
+      html: 'Une <b>fuite</b> : copier la règle ne prouve rien. Tapez <code>Marge</code> ↵',
       gate: 'ds:brick-proved',
     },
     {
       target: '.goal-status',
-      html: 'Brique posée — la règle est garantie.',
+      html: 'Votre brique implique la règle : prouvée.',
       gate: 'next',
     },
   ],

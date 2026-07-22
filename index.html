@@ -214,23 +214,16 @@
       }
       .chip.atom:hover { background: var(--hover); }
 
-      .rule { margin-top: 10px; padding: 5px 10px; border-radius: 6px; color: var(--muted); border: 1px solid transparent; }
-      .rule .rule-tag {
-        display: inline-block; margin-right: 8px; padding: 0 7px;
-        border-radius: 4px; font-size: 11px; text-transform: uppercase;
-        letter-spacing: 0.05em; font-weight: 600;
+      /* Règle : trait de séparation, titre en gros sans encadré. */
+      .rule { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--border); color: var(--muted); }
+      .rule-label {
+        font-size: 15px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 0.05em; margin-bottom: 5px;
       }
-      .rule.break .rule-tag { color: var(--pink); border: 1px solid rgba(255, 107, 157, 0.5); }
-      .rule.prove .rule-tag { color: var(--green); border: 1px solid rgba(129, 201, 149, 0.5); }
-      .rule.violated {
-        border-color: rgba(255, 107, 157, 0.6);
-        background:
-          linear-gradient(105deg, transparent 42%, rgba(255, 107, 157, 0.25) 43%, transparent 45%),
-          linear-gradient(75deg, transparent 60%, rgba(255, 107, 157, 0.22) 61%, transparent 63%),
-          rgba(255, 107, 157, 0.06);
-        animation: rule-crack 0.4s ease-out;
-      }
-      .rule.violated .rule-icon { color: var(--pink); }
+      .rule.break .rule-label { color: var(--pink); }
+      .rule.prove .rule-label { color: var(--green); }
+      .rule.violated { animation: rule-crack 0.4s ease-out; }
+      .rule.violated .src { color: var(--pink); font-weight: 600; }
       @keyframes rule-crack {
         0%, 60% { transform: translateX(0); }
         10% { transform: translateX(-3px); }

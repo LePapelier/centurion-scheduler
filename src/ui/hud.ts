@@ -115,9 +115,10 @@ export class Hud {
         <div class="chips vars"></div>
         <div class="chips actions"></div>
         <div class="chips atoms"></div>
-        <div class="rule ${level.mode === 'trace' ? 'break' : 'prove'}"><span class="rule-tag">${
-          level.mode === 'trace' ? 'règle à briser' : 'règle à garantir'
-        }</span> <span class="src">${hl(level.invariantSrc)}</span></div>
+        <div class="rule ${level.mode === 'trace' ? 'break' : 'prove'}">
+          <div class="rule-label">${level.mode === 'trace' ? 'règle à briser' : 'règle à garantir'}</div>
+          <div class="src">${hl(level.invariantSrc)}</div>
+        </div>
         <div class="moves-top"></div>
       </div>`
     root.appendChild(panel)

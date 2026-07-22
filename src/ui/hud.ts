@@ -213,9 +213,8 @@ export class Hud {
     const hoverAction = (el: HTMLElement, a: (typeof level.actionsSrc)[number]): void => {
       el.addEventListener('mouseenter', () => {
         this.popoverEl.innerHTML = `
-          <div class="pop-name">${a.name}</div>
-          <div class="pop-row"><span class="pop-tag guard">QUAND</span> ${hl(a.guardSrc)}</div>
-          <div class="pop-row"><span class="pop-tag effect">FAIT</span> ${hl(a.updateSrc)}</div>`
+          <div class="pop-row"><span class="pop-tag guard">possible si</span> ${hl(a.guardSrc)}</div>
+          <div class="pop-row"><span class="pop-tag effect">résultat</span> ${hl(a.updateSrc)}</div>`
         this.popoverEl.classList.remove('hidden')
         const r = el.getBoundingClientRect()
         this.popoverEl.style.left = `${Math.min(r.left, window.innerWidth - 380)}px`

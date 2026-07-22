@@ -4,7 +4,7 @@ import { buildFullSpace, type FullSpace } from './core/fullspace'
 import { currentNode, newGame, play, undo, type Game } from './core/game'
 import { checkCandidate, impliesGoal, usedBricks } from './core/prove'
 import type { CompiledLevel, Expr } from './dsl/ast'
-import { countTokens, parseExpr, substituteAliases } from './dsl/parse'
+import { countTokens } from './dsl/parse'
 import { layout } from './layout/force'
 import { levels } from './levels'
 import { GraphView } from './render/graph'
@@ -12,7 +12,7 @@ import { color } from './render/palette'
 import { SceneCtx } from './render/scene'
 import { audio } from './ui/audio'
 import { loadProgress, recordScore, saveProgress, unlock } from './ui/campaign'
-import { FormulaEditor } from './ui/editor'
+import { HornBuilder, clauseComplete, clauseExpr, clauseSrc, type HornClause } from './ui/hornBuilder'
 import { hl, hlValue } from './ui/highlight'
 import { Hud, type Brick } from './ui/hud'
 
@@ -453,7 +453,7 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       return parts.join('')
     },
     {
-      refocus: () => editor.focus(),
+      refocus: () => undefined,
       recenter: () => {
         const from = ctx.controls.target.clone()
         ctx.addTween(
@@ -488,32 +488,6 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       ...bricks.map((b) => [b.name, b.expr] as const),
     ])
 
-  /**
-   * Une candidate s'ASSEMBLE à partir des pièces : identifiants connus et
-   * connecteurs logiques seulement — ni variables brutes, ni littéraux,
-   * ni comparaisons (elles vivent dans les pièces).
-   */
-  const validatePieces = (e: Expr): void => {
-    switch (e.kind) {
-      case 'num':
-      case 'str':
-        throw new Error('littéraux interdits — assemblez les pièces données')
-      case 'var':
-        if (!pieces().has(e.name)) throw new Error(`pièce inconnue « ${e.name} »`)
-        return
-      case 'not':
-        validatePieces(e.arg)
-        return
-      case 'bin':
-        if (e.op === 'and' || e.op === 'or' || e.op === 'implies') {
-          validatePieces(e.left)
-          validatePieces(e.right)
-          return
-        }
-        throw new Error('seuls ∧ ∨ ¬ ⇒ sont permis — les comparaisons vivent dans les pièces')
-    }
-  }
-
   /** Une brique est supprimable si aucune autre ne mentionne son nom.
    *  (Gating : le ✕ n'apparaît qu'à partir du niveau des alias.) */
   const allowDelete = level.id !== 'p1-fusible-sur'
@@ -534,20 +508,6 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       const name = `L${i}`
       if (!pieces().has(name) && level.init[name] === undefined) return name
     }
-  }
-
-  /** « nom ≜ assemblage » ou assemblage nu ; pièces substituées. Lève si invalide. */
-  const parseCandidate = (text: string): { name: string | null; src: string; expr: Expr } => {
-    const m = text.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(?:≜|==)\s*(.+)$/)
-    const name = m?.[1] ?? null
-    const src = m?.[2].trim() ?? text
-    if (name !== null) {
-      if (level.init[name] !== undefined) throw new Error(`« ${name} » est une variable`)
-      if (pieces().has(name)) throw new Error(`« ${name} » est déjà pris`)
-    }
-    const parsed = parseExpr(src)
-    validatePieces(parsed)
-    return { name, src, expr: substituteAliases(parsed, pieces()) }
   }
 
   const baseStyles = {
@@ -576,73 +536,73 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
     )
   }
 
-  /** Aperçu live d'une candidate ; retourne le rapport si elle est parsable. */
-  const preview = (text: string): ReturnType<typeof checkCandidate> | null => {
-    if (text === '') {
-      idle()
-      return null
-    }
-    let report
-    try {
-      report = checkCandidate(space, bricks.map((b) => b.expr), parseCandidate(text).expr)
-    } catch (err) {
-      // L'erreur doit se VOIR : en clair dans le statut, pas seulement soulignée.
-      hud.setStatus(`<span class="err">✗ ${(err as Error).message}</span>`)
-      return null
-    }
+  const atomExpr = new Map(level.atoms.map((a) => [a.name, a.expr] as const))
+
+  // Clause en cours de construction (constructeur SI…ALORS).
+  let current: HornClause = { body: [], head: null }
+
+  /** Affiche le rapport d'induction d'une candidate sur le graphe et le statut. */
+  const showReport = (report: ReturnType<typeof checkCandidate>): void => {
     view.setStyles({
       ...baseStyles,
       region: report.region,
       ctiEdges: new Set(report.ctis),
       highlight: report.initOk ? -1 : space.init,
     })
-    const failing = new Set(report.ctis.map((e) => graph.edges[e].action))
-    hud.setFailingActions(failing)
-    // Balayage quand la région change de forme (pas à chaque frappe).
+    hud.setFailingActions(new Set(report.ctis.map((e) => graph.edges[e].action)))
     const regionKey = `${report.region.size}:${report.ctis.length}`
     if (regionKey !== lastRegionKey) {
       lastRegionKey = regionKey
       view.sweep(report.region, space.init)
     }
     if (!report.initOk) {
-      hud.setStatus(`l'état initial <b>échappe</b> à votre formule`)
+      hud.setStatus(`l'état initial <b>échappe</b> à votre clause`)
     } else if (report.ctis.length > 0) {
       const e = graph.edges[report.ctis[0]]
       hud.setStatus(
         `<b>${report.ctis.length}</b> fuite${report.ctis.length > 1 ? 's' : ''} — <b>${e.action}</b> : ${labels[e.from]} → ${labels[e.to]}`,
       )
     } else {
-      hud.setStatus(`aucune fuite ✓ — Entrée : poser la brique`)
+      hud.setStatus(`aucune fuite ✓ — « poser la clause » (ou Entrée)`)
     }
+  }
+
+  /** Aperçu de la clause en cours ; null si incomplète. */
+  const preview = (c: HornClause): ReturnType<typeof checkCandidate> | null => {
+    if (locked) return null
+    if (!clauseComplete(c)) {
+      idle()
+      hud.setStatus(`assemblez une clause : <b>SI</b> des prémisses <b>ALORS</b> une conclusion`)
+      return null
+    }
+    let expr
+    try {
+      expr = clauseExpr(c, atomExpr)
+    } catch (err) {
+      hud.setStatus(`<span class="err">✗ ${(err as Error).message}</span>`)
+      return null
+    }
+    const report = checkCandidate(space, bricks.map((b) => b.expr), expr)
+    showReport(report)
     return report
   }
 
-  const LOGIC_OPS = [
-    { label: '∧', detail: '/\\  et', apply: '∧ ', type: 'keyword' },
-    { label: '∨', detail: '\\/  ou', apply: '∨ ', type: 'keyword' },
-    { label: '¬', detail: '~  non', apply: '¬', type: 'keyword' },
-    { label: '⇒', detail: '=>  implique', apply: '⇒ ', type: 'keyword' },
-  ]
-
-  const editor = new FormulaEditor({
+  const builder = new HornBuilder({
     parent: hud.editorMount,
-    placeholder: 'assemblez les pièces : ∧ ∨ ¬ ⇒ — « nom ≜ assemblage » pour nommer',
-    completions: () => [
-      ...level.atoms.map((a) => ({ label: a.name, detail: a.src, type: 'variable', boost: 1 })),
-      ...bricks.map((b) => ({ label: b.name, detail: `□ ${b.src}`, type: 'class', boost: 2 })),
-      ...LOGIC_OPS,
-    ],
-    onChange: (text) => {
-      if (!locked) preview(text)
+    atoms: level.atoms.map((a) => ({ name: a.name, src: a.src })),
+    onChange: (c) => {
+      current = c
+      preview(c)
     },
-    onSubmit: (text) => {
-      if (locked || text === '') return
-      const report = preview(text)
+    onSubmit: (c) => {
+      if (locked) return
+      const report = preview(c)
       if (report === null || !report.ok) return
-      const { name, src, expr } = parseCandidate(text)
+      const src = clauseSrc(c)
+      const expr = clauseExpr(c, atomExpr)
       const used = usedBricks(space, bricks.map((b) => b.expr), expr)
       bricks = [...bricks, {
-        name: name ?? autoName(),
+        name: autoName(),
         src,
         expr,
         deps: bricks.filter((_, i) => used[i]).map((b) => b.name),
@@ -651,7 +611,8 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
       hud.flyToBricks(`□ ${hl(src)}`)
       audio.impact()
       hud.renderBricks(decorated())
-      editor.setText('')
+      builder.reset()
+      current = { body: [], head: null }
       idle()
       if (refreshGoal()) {
         locked = true
@@ -691,15 +652,16 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
         )
       }
     },
-    lint: (text) => {
-      try {
-        checkCandidate(space, [], parseCandidate(text).expr)
-        return null
-      } catch (err) {
-        return (err as Error).message
-      }
-    },
   })
+
+  // Entrée = poser la clause, même hors du focus des chips.
+  const keydown = (ev: KeyboardEvent): void => {
+    if (ev.key === 'Enter' && !locked && ctx.renderer.domElement.isConnected) {
+      ev.preventDefault()
+      builder.submit()
+    }
+  }
+  window.addEventListener('keydown', keydown)
 
   hud.updateVars(level.init, null)
   hud.setEnabledActions(EMPTY as unknown as Set<string>)
@@ -707,27 +669,27 @@ function setupProve(level: CompiledLevel, ctx: SceneCtx, hud: Hud, win: Win): Mo
   hud.setMoves('')
   refreshGoal()
   idle()
-  editor.focus()
 
   return {
     onReset: () => {
       locked = false
       bricks = bricks.filter((b) => b.given)
       hud.renderBricks(decorated())
-      editor.setText('')
+      builder.reset()
+      current = { body: [], head: null }
       refreshGoal()
       idle()
-      editor.focus()
     },
     onDeleteBrick: (name) => {
       if (locked) return
       bricks = bricks.filter((b) => b.name !== name)
       hud.renderBricks(decorated())
       refreshGoal()
-      preview(editor.getText())
-      editor.focus()
+      preview(current)
     },
-    onInsertAction: (name) => editor.insert(name),
+    // Clic sur un atome du panneau : l'ajoute au corps de la clause.
+    onInsertAction: (name) => builder.toggleBody(name),
+    onDispose: () => window.removeEventListener('keydown', keydown),
   }
 }
 

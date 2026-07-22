@@ -99,6 +99,28 @@
       .commandbar .actionbar .chip { padding: 6px 18px; font-size: 14px; }
       .commandbar .editor-mount { margin: 0 0 8px; }
       .commandbar .editor-mount:empty { display: none; }
+
+      .horn { padding: 4px 0; }
+      .horn-line { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin: 3px 0; }
+      .horn-kw { font-weight: 700; font-size: 12px; letter-spacing: 0.05em; }
+      .horn-kw.si { color: var(--cyan); }
+      .horn-kw.alors { color: var(--green); }
+      .horn-body, .horn-head { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+      .horn-sep { color: var(--dim); }
+      .horn-chip {
+        padding: 2px 9px; border-radius: 999px; font: inherit; font-size: 13px;
+        background: #0d1526; border: 1px solid var(--border); color: var(--dim);
+      }
+      .horn-chip:hover { border-color: #2c4a6e; color: var(--muted); }
+      .horn-chip.pos { color: var(--text); border-color: var(--cyan); box-shadow: 0 0 8px -3px var(--cyan); }
+      .horn-chip.neg { color: var(--pink); border-color: var(--pink); box-shadow: 0 0 8px -3px var(--pink); }
+      .horn-chip.bottom { font-weight: 700; }
+      .horn-submit {
+        margin-left: auto; background: #10233a; color: var(--green);
+        border: 1px solid rgba(129, 201, 149, 0.5); border-radius: 6px;
+        padding: 4px 12px; font: inherit; cursor: pointer;
+      }
+      .horn-submit:hover { background: #16324a; }
       .commandbar .buttons { display: flex; gap: 6px; margin: 8px 0 0; justify-content: center; }
       .commandbar .moves { margin: 0; }
       .commandbar .status { margin: 2px 0 0; }

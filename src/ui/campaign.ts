@@ -1,4 +1,4 @@
-const KEY = 'demonic-scheduler-progress'
+const KEY = 'centurion-scheduler-progress'
 
 export interface Progress {
   /** Indice du plus haut niveau débloqué. */

@@ -4,7 +4,7 @@
  * (après un geste utilisateur, comme l'exige le navigateur).
  */
 
-const KEY = 'demonic-scheduler-audio'
+const KEY = 'centurion-scheduler-audio'
 
 class AudioFx {
   private ctx: AudioContext | null = null
